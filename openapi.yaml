@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: API de Inspecciones de Obra
+  version: 1.0.0
+  description: |
+    Inspecciones de obra municipales (Dominio 2B · municipio extenso).
+    Todo entra por el gateway (`http://localhost:8000`).
+
+    **Cómo probar en Swagger UI:** hacé `POST /auth/login`, copiá el `accessToken`,
+    apretá **Authorize** y pegalo (solo el token, sin "Bearer").
+servers:
+  - url: http://localhost:8000
+    description: Gateway (vista desde tu navegador)
+tags:
+  - name: Auth
+  - name: Inspecciones
+  - name: Actas
+  - name: Mobile (BFF)
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Login' }
+            example: { username: inspector1, password: inspector123 }
+      responses:
+        '200':
+          description: Tokens emitidos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tokens' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '429': { description: Demasiados intentos de login }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Renovar tokens (el refresh token se rota, el anterior deja de servir)
+      operationId: refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Tokens nuevos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tokens' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: "Revocar un refresh token (ej.: celular perdido)"
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '204': { description: Revocado }
+  /api/inspecciones:
+    get:
+      tags: [Inspecciones]
+      summary: Listar inspecciones (inspector ve solo las suyas; supervisor, todas)
+      operationId: listarInspecciones
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista de inspecciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Inspeccion' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+  /api/inspecciones/{id}/asignacion:
+    patch:
+      tags: [Inspecciones]
+      summary: Asignar o reasignar una inspección (solo supervisor)
+      operationId: asignarInspeccion
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          example: aaaaaaaa-0000-0000-0000-000000000001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inspectorId]
+              properties:
+                inspectorId: { type: string, format: uuid }
+            example: { inspectorId: '22222222-2222-2222-2222-222222222222' }
+      responses:
+        '200':
+          description: Inspección actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Inspeccion' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+  /api/actas:
+    get:
+      tags: [Actas]
+      summary: Listar actas (inspector ve solo las suyas)
+      operationId: listarActas
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista de actas (máx. 100, más recientes primero)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Acta' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+  /api/actas/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: UUID generado por el celular
+        schema: { type: string, format: uuid }
+        example: bbbbbbbb-0000-0000-0000-000000000001
+    put:
+      tags: [Actas]
+      summary: Cargar un acta cerrada (idempotente)
+      description: |
+        El id lo genera el celular, así que un reintento tras un corte de señal **no duplica** el acta:
+        responde `200` con el acta ya existente. El acta cerrada no se modifica.
+        Solo el inspector al que está asignada la inspección puede cargarla (regla fina).
+        La asociación al expediente es **asíncrona**: el acta queda `pendiente_asociacion`
+        y el servicio de sincronización la envía al sistema municipal.
+      operationId: cargarActa
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActaNueva' }
+            example:
+              inspeccionId: aaaaaaaa-0000-0000-0000-000000000001
+              observaciones: Obra sin cartel reglamentario. Medianera según plano.
+              cantidadFotos: 6
+              creadaEnDispositivo: '2025-10-28T14:32:00-03:00'
+      responses:
+        '201':
+          description: Acta recibida
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Acta' }
+        '200':
+          description: Reintento — el acta ya estaba recibida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Acta' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+        '409':
+          description: Ya existe un acta con ese id de otro inspector
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
+    get:
+      tags: [Actas]
+      summary: Consultar un acta y el estado de su asociación al expediente
+      operationId: obtenerActa
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: El acta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Acta' }
+        '400': { $ref: '#/components/responses/Invalido' }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+        '404': { $ref: '#/components/responses/NoEncontrado' }
+  /mobile/inspecciones:
+    get:
+      tags: [Mobile (BFF)]
+      summary: Mis inspecciones, en formato liviano para la app
+      operationId: mobileInspecciones
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lista reducida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        expediente: { type: string }
+                        direccion: { type: string }
+        '401': { $ref: '#/components/responses/NoAutenticado' }
+        '403': { $ref: '#/components/responses/Prohibido' }
+  /mobile/sync:
+    post:
+      tags: [Mobile (BFF)]
+      summary: Sincronizar en un solo pedido las actas acumuladas sin conexión
+      description: Hasta 50 actas por pedido. Cada una devuelve su propio resultado.
+      operationId: mobileSync
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actas]
+              properties:
+                actas:
+                  type: array
+                  maxItems: 50
+                  items:
+                    allOf:
+                      - type: object
+                        required: [id]
+                        properties:
+                          id: { type: string, format: uuid }
+                      - $ref: '#/components/schemas/ActaNueva'
+            example:
+              actas:
+                - id: bbbbbbbb-0000-0000-0000-000000000002
+                  inspeccionId: aaaaaaaa-0000-0000-0000-000000000001
+                  observaciones: Acta cargada sin conexión.
+                  cantidadFotos: 3
+                - id: bbbbbbbb-0000-0000-0000-000000000003
+                  inspeccionId: aaaaaaaa-0000-0000-0000-000000000003
+                  observaciones: "Esta es de OTRO inspector, debe rechazarse."
+      responses:
+        '200':
+          description: Resultado por acta
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resultados:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, nullable: true }
+                        http: { type: integer }
+                        estado: { type: string, enum: [creada, ya_recibida, rechazada] }
+                        detalle: { type: string }
+        '400': { $ref: '#/components/responses/Invalido' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Login:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    Tokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, description: "Segundos de vida del access token", example: 900 }
+    Inspeccion:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        expedienteId: { type: string, example: EXP-2025-0001 }
+        direccion: { type: string }
+        inspectorId: { type: string, format: uuid, nullable: true }
+        creadaEn: { type: string, format: date-time }
+    ActaNueva:
+      type: object
+      required: [inspeccionId]
+      properties:
+        inspeccionId: { type: string, format: uuid }
+        observaciones: { type: string, maxLength: 5000 }
+        cantidadFotos: { type: integer, minimum: 0, maximum: 20 }
+        creadaEnDispositivo:
+          type: string
+          format: date-time
+          nullable: true
+          description: Fecha declarada por el celular (no es una fuente confiable)
+    Acta:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        inspeccionId: { type: string, format: uuid }
+        inspectorId: { type: string, format: uuid }
+        observaciones: { type: string }
+        cantidadFotos: { type: integer }
+        estado: { type: string, enum: [pendiente_asociacion, asociada, error_asociacion] }
+        creadaEnDispositivo: { type: string, format: date-time, nullable: true }
+        recibidaEn: { type: string, format: date-time }
+        asociadaEn: { type: string, format: date-time, nullable: true }
+        detalleAsociacion: { type: string, nullable: true }
+    ProblemDetails:
+      description: Formato de error estándar (RFC 9457)
+      type: object
+      properties:
+        type: { type: string, example: about:blank }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+  responses:
+    Invalido:
+      description: Datos de entrada inválidos
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    NoAutenticado:
+      description: Falta el token, es inválido o está vencido
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    Prohibido:
+      description: El rol o la asignación no permiten la operación
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+    NoEncontrado:
+      description: El recurso no existe
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }

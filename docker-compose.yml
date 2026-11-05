@@ -1,0 +1,108 @@
+# TP Arquitectura de Software 1 — Dominio 2B · Inspecciones de obra (municipio extenso)
+# Un solo comando levanta todo:   docker compose up -d --build
+# La configuración y los secretos salen del archivo .env (copiá .env.example a .env).
+
+x-db-env: &db-env
+  DB_HOST: db
+  DB_PORT: 5432
+  DB_NAME: ${DB_NAME}
+  DB_USER: ${DB_USER}
+  DB_PASSWORD: ${DB_PASSWORD}
+
+services:
+
+  # Base de datos. No publica puertos: solo la ven los servicios de la red "backend".
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:?falta DB_NAME en .env}
+      POSTGRES_USER: ${DB_USER:?falta DB_USER en .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD en .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  # Login: valida credenciales y emite access token + refresh token rotativo.
+  auth:
+    build: ./auth
+    environment:
+      <<: *db-env
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET en .env}
+      ACCESS_TTL_MIN: ${ACCESS_TTL_MIN:-15}
+      REFRESH_TTL_DAYS: ${REFRESH_TTL_DAYS:-7}
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+
+  # API de inspecciones y actas (reglas de rol y de asignación).
+  api:
+    build: ./api
+    environment:
+      <<: *db-env
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET en .env}
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [backend]
+
+  # Simulador del sistema municipal heredado (solo SOAP). Lo consume únicamente "sync".
+  mock-expedientes:
+    build: ./mock-expedientes
+    environment:
+      PORT: 4100
+      MOCK_LATENCIA_MS: ${MOCK_LATENCIA_MS:-800}
+      MOCK_FALLO_PCT: ${MOCK_FALLO_PCT:-0}
+    networks: [backend]
+
+  # Capa anticorrupción: lee el outbox y asocia las actas al expediente por SOAP, con reintentos.
+  sync:
+    build: ./sync
+    environment:
+      <<: *db-env
+      SOAP_URL: http://mock-expedientes:4100/
+    depends_on:
+      db: { condition: service_healthy }
+      mock-expedientes: { condition: service_started }
+    restart: unless-stopped
+    networks: [backend]
+
+  # BFF de la app Android del inspector.
+  bff-inspector:
+    build: ./bff-inspector
+    environment:
+      PORT: 3001
+      API_URL: http://api:3000
+    depends_on: [api]
+    networks: [backend]
+
+  # Único punto de entrada al backend (http://localhost:8000).
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8000:80"
+    depends_on: [auth, api, bff-inspector]
+    networks: [backend]
+
+  # Documentación generada desde el contrato. Fuera de la red: quien llama a la API es tu navegador.
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    environment:
+      SWAGGER_JSON: /spec/openapi.yaml
+    volumes:
+      - ./openapi.yaml:/spec/openapi.yaml:ro
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
+
+networks:
+  backend:

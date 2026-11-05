@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="Expedientes" targetNamespace="http://municipio.example/expedientes"
+  xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="http://municipio.example/expedientes" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <types>
+    <xsd:schema targetNamespace="http://municipio.example/expedientes" elementFormDefault="qualified">
+      <xsd:element name="AsociarActa">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="expedienteId" type="xsd:string"/>
+          <xsd:element name="actaId" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AsociarActaResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="resultado" type="xsd:string"/>
+          <xsd:element name="yaAsociada" type="xsd:boolean"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="ConsultarExpediente">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="expedienteId" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="ConsultarExpedienteResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="expedienteId" type="xsd:string"/>
+          <xsd:element name="titular" type="xsd:string"/>
+          <xsd:element name="estado" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </types>
+  <message name="AsociarActaIn"><part name="parameters" element="tns:AsociarActa"/></message>
+  <message name="AsociarActaOut"><part name="parameters" element="tns:AsociarActaResponse"/></message>
+  <message name="ConsultarExpedienteIn"><part name="parameters" element="tns:ConsultarExpediente"/></message>
+  <message name="ConsultarExpedienteOut"><part name="parameters" element="tns:ConsultarExpedienteResponse"/></message>
+  <portType name="ExpedientesPort">
+    <operation name="AsociarActa"><input message="tns:AsociarActaIn"/><output message="tns:AsociarActaOut"/></operation>
+    <operation name="ConsultarExpediente"><input message="tns:ConsultarExpedienteIn"/><output message="tns:ConsultarExpedienteOut"/></operation>
+  </portType>
+  <binding name="ExpedientesBinding" type="tns:ExpedientesPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="AsociarActa"><soap:operation soapAction="AsociarActa"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+    <operation name="ConsultarExpediente"><soap:operation soapAction="ConsultarExpediente"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+  </binding>
+  <service name="ExpedientesService">
+    <port name="ExpedientesPort" binding="tns:ExpedientesBinding"><soap:address location="http://mock-expedientes:4100/"/></port>
+  </service>
+</definitions>
