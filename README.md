@@ -2,7 +2,7 @@
 
 **Escenario 2B · Municipio extenso** (120 inspectores, zonas sin señal, NFR estrella: funcionamiento sin conexión).
 
-Este repo implementa **el corte**: *login* + el caso de uso mínimo **"un inspector completa un acta y queda asociada al expediente"**. Todo se levanta con un solo comando.
+Este repo implementa **el corte**: *login* + el caso de uso mínimo **"un inspector completa un acta y queda asociada al expediente"**. El backend se levanta con Docker Compose; la interfaz web se inicia por separado.
 
 ---
 
@@ -10,6 +10,7 @@ Este repo implementa **el corte**: *login* + el caso de uso mínimo **"un inspec
 
 - Docker Desktop (o Podman Desktop) abierto y funcionando.
 - Puertos libres en tu máquina: **8000**, **8080**.
+- Node.js y npm (para correr la interfaz web).
 
 ## Levantarlo (3 pasos)
 
@@ -22,6 +23,11 @@ docker compose up -d --build
 
 # 3. Verificar
 docker compose ps
+
+# 4. Si falla, para reiniciar
+docker compose down -v
+docker compose up -d --build
+
 ```
 
 La primera vez tarda unos minutos (baja imágenes e instala dependencias). Tenés que ver `db` como **healthy** y el resto como **running**. Después abrí:
@@ -32,6 +38,18 @@ La primera vez tarda unos minutos (baja imágenes e instala dependencias). Tené
 | http://localhost:8000/health | Gateway funcionando |
 
 Para apagar: `docker compose down` (conserva los datos) o `docker compose down -v` (borra todo y vuelve a cargar los datos de ejemplo).
+
+## Correr la interfaz web
+
+Primero levantá el backend con los pasos anteriores. Luego, desde la raíz del repo, instalá las dependencias e iniciá el servidor de desarrollo:
+
+```bash
+cd frontend;
+npm ci;
+npm run dev
+```
+
+Abrí **http://localhost:5173**. Vite reenvía las llamadas al backend en `http://localhost:8000`. Para detener la interfaz, presioná `Ctrl+C` en esa terminal; para detener el backend, ejecutá `docker compose down` desde la raíz del repo.
 
 ---
 

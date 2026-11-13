@@ -4,14 +4,52 @@ import { mensajeDeError, NetworkError } from '../api/http';
 import type { InspeccionLiviana } from '../api/types';
 import { actasDeUsuario, cachearInspecciones, inspeccionesCacheadas, suscribir, type ActaLocal } from './db';
 
+const HEALTH_URL = `${(import.meta.env.VITE_GATEWAY_URL || 'http://localhost:8000').replace(/\/+$/, '')}/health`;
+const HEALTH_CHECK_MS = 5000;
+const HEALTH_TIMEOUT_MS = 3000;
+
 export function useOnline(): boolean {
-  const [online, setOnline] = useState(navigator.onLine);
+  const [online, setOnline] = useState(false);
   useEffect(() => {
-    const on = () => setOnline(true);
+    let vigente = true;
+    let verificando = false;
+    const verificar = async () => {
+      if (verificando) return;
+      if (!navigator.onLine) {
+        setOnline(false);
+        return;
+      }
+
+      verificando = true;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+      try {
+        await fetch(HEALTH_URL, {
+          mode: 'no-cors',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (vigente) setOnline(navigator.onLine);
+      } catch {
+        if (vigente) setOnline(false);
+      } finally {
+        window.clearTimeout(timeout);
+        verificando = false;
+      }
+    };
+    const on = () => { void verificar(); };
     const off = () => setOnline(false);
+
+    void verificar();
+    const intervalo = window.setInterval(() => { void verificar(); }, HEALTH_CHECK_MS);
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    return () => {
+      vigente = false;
+      window.clearInterval(intervalo);
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
   }, []);
   return online;
 }

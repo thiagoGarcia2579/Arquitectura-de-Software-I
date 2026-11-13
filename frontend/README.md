@@ -15,6 +15,18 @@ Abrir http://localhost:5173. El gateway solo permite CORS desde `:8080`, por eso
 
 Usuarios de prueba: `inspector1` / `inspector123`, `inspector2` / `inspector123`, `supervisor1` / `supervisor123`, `admin1` / `admin123`.
 
+## Probar la app al abrirla sin conexión
+
+El service worker está habilitado tanto en desarrollo como en producción. Para probarlo en la app habitual, con el backend levantado ejecutá:
+
+```bash
+npm run dev
+```
+
+Abrí http://localhost:5173 con conexión, iniciá sesión como inspector y esperá a que cargue la lista de inspecciones. Luego, en DevTools → Network, activá **Offline** y abrí o recargá `/inspector`: los archivos de la interfaz se sirven desde la caché, y las inspecciones y actas previamente guardadas se leen de IndexedDB. Las llamadas al backend no se cachean y requieren conexión. Al desarrollar, los archivos servidos por Vite se guardan al cargarse y se prioriza la versión de red; después de cambiar archivos, recargá con conexión antes de repetir la prueba offline.
+
+El indicador de conexión comprueba el endpoint `/health` del gateway cada 5 segundos; por eso muestra si el servidor es alcanzable, no solo el estado de red reportado por el navegador.
+
 ## Estructura
 
 ```

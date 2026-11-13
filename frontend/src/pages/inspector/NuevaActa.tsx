@@ -44,7 +44,7 @@ export function NuevaActa() {
         creadaEnDispositivo: new Date().toISOString(),
         local: 'pendiente_envio',
       });
-      if (navigator.onLine) void sincronizar(userId).catch(() => undefined);
+      if (online) void sincronizar(userId).catch(() => undefined);
       navigate('/inspector/actas');
     } catch {
       setError('No se pudo guardar el acta en el celular. Revisá el almacenamiento disponible.');

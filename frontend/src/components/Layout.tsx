@@ -7,7 +7,7 @@ export function OnlineDot() {
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${online ? 'text-emerald-700' : 'text-amber-700'}`}>
       <span className={`h-2 w-2 rounded-full ${online ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-      {online ? 'En línea' : 'Sin conexión'}
+      {online ? 'Servidor disponible' : 'Sin conexión'}
     </span>
   );
 }
