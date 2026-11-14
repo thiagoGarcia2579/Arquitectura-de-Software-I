@@ -327,6 +327,7 @@ components:
         id: { type: string, format: uuid }
         inspeccionId: { type: string, format: uuid }
         inspectorId: { type: string, format: uuid }
+        expedienteId: { type: string, example: EXP-2025-0001 } 
         observaciones: { type: string }
         cantidadFotos: { type: integer }
         estado: { type: string, enum: [pendiente_asociacion, asociada, error_asociacion] }

@@ -57,7 +57,7 @@ const aInspeccion = (r) => ({
   inspectorId: r.inspector_id, creadaEn: r.creada_en,
 });
 const aActa = (r) => ({
-  id: r.id, inspeccionId: r.inspeccion_id, inspectorId: r.inspector_id,
+  id: r.id, inspeccionId: r.inspeccion_id, inspectorId: r.inspector_id, expedienteId: r.expediente_id,
   observaciones: r.observaciones, cantidadFotos: r.cantidad_fotos, estado: r.estado,
   creadaEnDispositivo: r.creada_en_dispositivo, recibidaEn: r.recibida_en,
   asociadaEn: r.asociada_en, detalleAsociacion: r.detalle_asociacion,
@@ -103,8 +103,8 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
     return problem(res, 400, 'Datos inválidos', 'El id del acta y "inspeccionId" deben ser UUID válidos.', req.originalUrl);
   }
   if (typeof observaciones !== 'string' || observaciones.length > 5000 ||
-      !Number.isInteger(cantidadFotos) || cantidadFotos < 0 || cantidadFotos > 20 ||
-      (creadaEnDispositivo !== null && (typeof creadaEnDispositivo !== 'string' || Number.isNaN(Date.parse(creadaEnDispositivo))))) {
+    !Number.isInteger(cantidadFotos) || cantidadFotos < 0 || cantidadFotos > 20 ||
+    (creadaEnDispositivo !== null && (typeof creadaEnDispositivo !== 'string' || Number.isNaN(Date.parse(creadaEnDispositivo))))) {
     return problem(res, 400, 'Datos inválidos',
       '"observaciones" (texto, máx. 5000), "cantidadFotos" (entero 0 a 20) y "creadaEnDispositivo" (fecha ISO, opcional).', req.originalUrl);
   }
@@ -118,7 +118,6 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
       await client.query('ROLLBACK');
       return problem(res, 404, 'Inspección no encontrada', `No existe la inspección ${inspeccionId}.`, req.originalUrl);
     }
-    // REGLA FINA: el rol "inspector" no alcanza; tiene que ser SU inspección.
     if (insp.rows[0].inspector_id !== req.usuario.id) {
       await client.query('ROLLBACK');
       return problem(res, 403, 'Prohibido', 'La inspección no está asignada a este inspector.', req.originalUrl);
@@ -131,7 +130,12 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
     );
 
     if (ins.rowCount === 0) {            // reintento: el acta ya existía
-      const previa = (await client.query('SELECT * FROM actas WHERE id = $1', [id])).rows[0];
+      // Hacemos JOIN para traer el expediente_id en el reintento (respuesta 200)
+      const previa = (await client.query(
+        `SELECT a.*, i.expediente_id FROM actas a JOIN inspecciones i ON i.id = a.inspeccion_id WHERE a.id = $1`,
+        [id]
+      )).rows[0];
+
       await client.query('ROLLBACK');
       if (previa.inspector_id !== req.usuario.id) {
         return problem(res, 409, 'Conflicto', 'Ya existe un acta con ese id.', req.originalUrl);
@@ -139,12 +143,19 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
       return res.status(200).json(aActa(previa));
     }
 
-    // Outbox: en la MISMA transacción queda registrado lo que falta enviar al sistema SOAP.
+    // Outbox
     await client.query('INSERT INTO outbox (acta_id) VALUES ($1)', [id]);
     await client.query('COMMIT');
-    res.status(201).location(`/actas/${id}`).json(aActa(ins.rows[0]));
+
+    // Para la respuesta 201 (creada con éxito), necesitamos el expediente_id haciendo JOIN también
+    const creadaConExpediente = (await client.query(
+      `SELECT a.*, i.expediente_id FROM actas a JOIN inspecciones i ON i.id = a.inspeccion_id WHERE a.id = $1`,
+      [id]
+    )).rows[0];
+
+    res.status(201).location(`/actas/${id}`).json(aActa(creadaConExpediente));
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => { });
     throw err;
   } finally {
     client.release();
@@ -155,7 +166,11 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
 app.get('/actas', autenticar, permitir('inspector', 'supervisor', 'administrativo'), async (req, res) => {
   const propias = req.usuario.rol === 'inspector';
   const { rows } = await pool.query(
-    `SELECT * FROM actas ${propias ? 'WHERE inspector_id = $1' : ''} ORDER BY recibida_en DESC LIMIT 100`,
+    `SELECT a.*, i.expediente_id 
+     FROM actas a 
+     JOIN inspecciones i ON i.id = a.inspeccion_id 
+     ${propias ? 'WHERE a.inspector_id = $1' : ''} 
+     ORDER BY a.recibida_en DESC LIMIT 100`,
     propias ? [req.usuario.id] : [],
   );
   res.json(rows.map(aActa));
@@ -164,8 +179,16 @@ app.get('/actas', autenticar, permitir('inspector', 'supervisor', 'administrativ
 app.get('/actas/:id', autenticar, permitir('inspector', 'supervisor', 'administrativo'), async (req, res) => {
   const { id } = req.params;
   if (!UUID.test(id)) return problem(res, 400, 'Id inválido', 'El id debe ser un UUID.', req.originalUrl);
-  const { rows } = await pool.query('SELECT * FROM actas WHERE id = $1', [id]);
-  // Para un inspector, el acta ajena responde igual que una inexistente (no revela que existe).
+
+  // Hacemos JOIN con inspecciones para obtener el expediente_id
+  const { rows } = await pool.query(
+    `SELECT a.*, i.expediente_id 
+     FROM actas a 
+     JOIN inspecciones i ON i.id = a.inspeccion_id 
+     WHERE a.id = $1`,
+    [id]
+  );
+
   if (rows.length === 0 || (req.usuario.rol === 'inspector' && rows[0].inspector_id !== req.usuario.id)) {
     return problem(res, 404, 'Acta no encontrada', `No existe el acta ${id}.`, req.originalUrl);
   }
