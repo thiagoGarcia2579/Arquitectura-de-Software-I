@@ -5,13 +5,18 @@
 //   3) regla fina: un inspector solo carga actas de inspecciones ASIGNADAS A ÉL
 import express from 'express';
 import pg from 'pg';
-import jwt from 'jsonwebtoken';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  console.error('JWT_SECRET falta o tiene menos de 32 caracteres (revisá el .env)');
+const JWKS_URL = process.env.JWKS_URL;
+const ISSUER = process.env.ISSUER;
+const AUDIENCE = process.env.AUDIENCE ?? 'inspecciones-api';
+if (!JWKS_URL || !ISSUER) {
+  console.error('Faltan JWKS_URL e ISSUER (revisá el docker-compose)');
   process.exit(1);
 }
+// Se descarga la primera vez que llega un token y queda en caché.
+const jwks = createRemoteJWKSet(new URL(JWKS_URL));
+const ROLES = ['inspector', 'supervisor', 'administrativo'];
 
 const pool = new pg.Pool({
   host: process.env.DB_HOST ?? 'localhost',
@@ -32,18 +37,24 @@ function problem(res, status, title, detail, instance) {
 }
 
 // ---- Autenticación y roles -------------------------------------------------
-function autenticar(req, res, next) {
+async function autenticar(req, res, next) {
   const [esquema, token] = (req.get('Authorization') ?? '').split(' ');
   if (esquema !== 'Bearer' || !token) {
+    res.set('WWW-Authenticate', 'Bearer');
     return problem(res, 401, 'No autenticado', 'Falta el header "Authorization: Bearer <token>".', req.originalUrl);
   }
+  let p;
   try {
-    const p = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'], issuer: 'auth-inspecciones', audience: 'inspecciones' });
-    req.usuario = { id: p.sub, rol: p.rol, nombre: p.nombre };
-    next();
+    // Verifica firma (clave pública de Keycloak), emisor, audiencia y vencimiento.
+    ({ payload: p } = await jwtVerify(token, jwks, { issuer: ISSUER, audience: AUDIENCE, algorithms: ['RS256'] }));
   } catch {
-    problem(res, 401, 'Token inválido', 'El token es inválido o está vencido.', req.originalUrl);
+    res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+    return problem(res, 401, 'Token inválido', 'El token es inválido o está vencido.', req.originalUrl);
   }
+  const rol = (p.realm_access?.roles ?? []).find((r) => ROLES.includes(r));
+  if (!rol) return problem(res, 403, 'Prohibido', 'El usuario no tiene un rol del sistema.', req.originalUrl);
+  req.usuario = { id: p.sub, rol, nombre: p.name ?? p.preferred_username };
+  next();
 }
 
 const permitir = (...roles) => (req, res, next) =>
@@ -70,7 +81,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Inspector: solo las suyas. Supervisor: todas. Administrativo: 403 (matriz de permisos).
-app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor'), async (req, res) => {
+app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor','administrativo'), async (req, res) => {
   const propias = req.usuario.rol === 'inspector';
   const { rows } = await pool.query(
     `SELECT * FROM inspecciones ${propias ? 'WHERE inspector_id = $1' : ''} ORDER BY creada_en, id`,

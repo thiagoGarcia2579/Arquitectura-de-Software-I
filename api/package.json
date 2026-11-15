@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "main": "src/index.js",
-  "scripts": { "start": "node src/index.js" },
+  "scripts": {
+    "start": "node src/index.js"
+  },
   "dependencies": {
     "express": "^5.1.0",
-    "jsonwebtoken": "^9.0.2",
+    "jose": "^6.0.11",
     "pg": "^8.13.0"
   }
 }
