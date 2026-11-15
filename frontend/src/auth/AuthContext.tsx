@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { login as apiLogin, logout as apiLogout } from '../api/endpoints';
 import type { Rol, Usuario } from '../api/types';
+import { userManager } from './oidc';
 import { clearSession, decodeUsuario, loadSession, saveSession, SESSION_EVENT } from './session';
 
 interface AuthCtx {
   usuario: Usuario | null;
-  login: (username: string, password: string) => Promise<Usuario>;
+  iniciarLogin: () => Promise<void>;      // redirige a Keycloak
+  completarLogin: () => Promise<Usuario>; // se llama al volver de Keycloak (/login/callback)
   logout: () => Promise<void>;
 }
 
@@ -30,24 +31,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener(SESSION_EVENT, sync); window.removeEventListener('storage', sync); };
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const tokens = await apiLogin(username, password);
-    const u = decodeUsuario(tokens.accessToken);
-    if (!u) throw new Error('El servidor devolvió un token inválido.');
-    saveSession(tokens);
+  const iniciarLogin = useCallback(() => userManager.signinRedirect(), []);
+
+  const completarLogin = useCallback(async () => {
+    const user = await userManager.signinRedirectCallback();
+    const u = decodeUsuario(user.access_token);
+    if (!u) throw new Error('El token no trae un rol del sistema (inspector, supervisor o administrativo).');
+    saveSession({ accessToken: user.access_token, refreshToken: user.refresh_token ?? '' });
     setUsuario(u);
     return u;
   }, []);
 
   const logout = useCallback(async () => {
-    const s = loadSession();
-    // Sin red igual se cierra localmente; la cola offline del usuario queda guardada en el equipo.
-    if (s && navigator.onLine) await apiLogout(s.refreshToken).catch(() => undefined);
+    // La cola offline del usuario queda guardada en el equipo.
     clearSession();
     setUsuario(null);
+    if (navigator.onLine) {
+      // Cierra también la sesión de Keycloak (SSO); si no, el próximo login entraría solo con el mismo usuario.
+      await userManager.signoutRedirect().catch(() => userManager.removeUser());
+    } else {
+      await userManager.removeUser().catch(() => undefined);
+    }
   }, []);
 
-  const value = useMemo(() => ({ usuario, login, logout }), [usuario, login, logout]);
+  const value = useMemo(() => ({ usuario, iniciarLogin, completarLogin, logout }), [usuario, iniciarLogin, completarLogin, logout]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

@@ -31,15 +31,19 @@ export function clearSession(): void {
 
 const ROLES: Rol[] = ['inspector', 'supervisor', 'administrativo'];
 
-// Solo lectura, SIN verificar la firma: la verificación real la hace el backend.
+// Solo lectura, SIN verificar la firma: la verificación real la hace la API con las claves públicas de Keycloak.
+// El rol viene en realm_access.roles (claim estándar de Keycloak).
 export function decodeUsuario(accessToken: string): Usuario | null {
   try {
     const payload = accessToken.split('.')[1];
     const b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const p = JSON.parse(new TextDecoder().decode(bytes)) as { sub?: string; rol?: string; nombre?: string };
-    if (!p.sub || !p.rol || !ROLES.includes(p.rol as Rol)) return null;
-    return { id: p.sub, rol: p.rol as Rol, nombre: p.nombre ?? p.sub };
+    const p = JSON.parse(new TextDecoder().decode(bytes)) as {
+      sub?: string; name?: string; preferred_username?: string; realm_access?: { roles?: string[] };
+    };
+    const rol = p.realm_access?.roles?.find((r) => ROLES.includes(r as Rol)) as Rol | undefined;
+    if (!p.sub || !rol) return null;
+    return { id: p.sub, rol, nombre: p.name ?? p.preferred_username ?? p.sub };
   } catch {
     return null;
   }

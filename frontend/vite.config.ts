@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
           navigateFallback: 'index.html',
-          navigateFallbackDenylist: [/^\/(auth|api|mobile)(\/|$)/],
+          navigateFallbackDenylist: [/^\/(api|mobile)(\/|$)/],
           ...(mode === 'development' && {
             runtimeCaching: [
               {
@@ -65,7 +65,6 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        '/auth': { target, changeOrigin: true },
         '/api': { target, changeOrigin: true },
         '/mobile': { target, changeOrigin: true },
       },

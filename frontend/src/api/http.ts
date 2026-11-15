@@ -1,5 +1,6 @@
 import { clearSession, loadSession, saveSession } from '../auth/session';
-import type { ProblemDetails, Tokens } from './types';
+import { ErrorResponse, userManager } from '../auth/oidc';
+import type { ProblemDetails } from './types';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
@@ -70,7 +71,6 @@ export function refrescarSesion(tokenViejo: string | undefined): Promise<string>
   refreshEnCurso ??= ejecutarRefresh(tokenViejo).finally(() => { refreshEnCurso = null; });
   return refreshEnCurso;
 }
-
 async function ejecutarRefresh(tokenViejo: string | undefined): Promise<string> {
   const correr = async (): Promise<string> => {
     const actual = loadSession();
@@ -78,22 +78,23 @@ async function ejecutarRefresh(tokenViejo: string | undefined): Promise<string> 
     // Otra pestaña ya renovó mientras esperábamos el lock: usamos su token.
     if (tokenViejo && actual.accessToken !== tokenViejo) return actual.accessToken;
 
-    const resp = await fetchRed('/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: actual.refreshToken }),
-    });
-    if (resp.status === 400 || resp.status === 401) {
-      clearSession();
-      throw new ApiError(401, 'Sesión vencida', 'Tu sesión venció. Iniciá sesión nuevamente.');
+    let user;
+    try {
+      user = await userManager.signinSilent();   // renueva con el refresh token de Keycloak
+    } catch (e) {
+      if (e instanceof ErrorResponse) {          // Keycloak lo rechazó: sesión vencida o revocada
+        clearSession();
+        await userManager.removeUser().catch(() => undefined);
+        throw new ApiError(401, 'Sesión vencida', 'Tu sesión venció. Iniciá sesión nuevamente.');
+      }
+      throw new NetworkError();                  // sin red: NO es una sesión vencida
     }
-    const tokens = await parse<Tokens>(resp);
-    saveSession(tokens);   // siempre se guarda el refresh token NUEVO
-    return tokens.accessToken;
+    if (!user) throw new NetworkError();
+    saveSession({ accessToken: user.access_token, refreshToken: user.refresh_token ?? actual.refreshToken });
+    return user.access_token;
   };
   return navigator.locks ? navigator.locks.request('inspecciones-refresh', correr) : correr();
 }
-
 // ---- Cliente central -------------------------------------------------------
 export async function request<T>(path: string, o: Opciones = {}): Promise<T> {
   const auth = o.auth ?? true;

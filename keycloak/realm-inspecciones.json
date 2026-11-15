@@ -49,7 +49,7 @@
       "clientId": "inspecciones-web", "name": "Frontend web (cliente público)", "enabled": true,
       "publicClient": true, "protocol": "openid-connect",
       "standardFlowEnabled": true, "implicitFlowEnabled": false, "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:5173/auth/callback"],
+      "redirectUris": ["http://localhost:5173/login/callback"],
       "webOrigins": ["http://localhost:5173"],
       "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:5173/*" },
       "protocolMappers": [{ "name": "audiencia-api", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",

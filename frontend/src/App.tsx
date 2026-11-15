@@ -9,13 +9,16 @@ import { MisActas } from './pages/inspector/MisActas';
 import { NuevaActa } from './pages/inspector/NuevaActa';
 import { ActasPage } from './pages/shared/ActasPage';
 import { SupervisorInspecciones } from './pages/supervisor/SupervisorInspecciones';
+import { CallbackPage } from './pages/login/CallbackPage';
+
 
 export default function App() {
   const { usuario } = useAuth();
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-
+      <Route path="/login/callback" element={<CallbackPage />} />
+      
       <Route element={<RequireRole rol="inspector" />}>
         <Route element={<Layout />}>
           <Route element={<InspectorShell />}>
