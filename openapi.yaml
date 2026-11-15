@@ -6,8 +6,8 @@ info:
     Inspecciones de obra municipales (Dominio 2B · municipio extenso).
     Todo entra por el gateway (`http://localhost:8000`).
 
-    **Cómo probar en Swagger UI:** hacé `POST /auth/login`, copiá el `accessToken`,
-    apretá **Authorize** y pegalo (solo el token, sin "Bearer").
+    **Cómo probar en Swagger UI:** Tocá Authorize, dejá vacío el client_secret y logueate con un usuario de prueba (inspector1, supervisor1, admin1). Para cerrar sesion, ingresa a la siguiente pagina http://localhost:8180/realms/inspecciones/protocol/openid-connect/logout
+    
 servers:
   - url: http://localhost:8000
     description: Gateway (vista desde tu navegador)
@@ -17,68 +17,13 @@ tags:
   - name: Actas
   - name: Mobile (BFF)
 paths:
-  /auth/login:
-    post:
-      tags: [Auth]
-      summary: Iniciar sesión
-      operationId: login
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/Login' }
-            example: { username: inspector1, password: inspector123 }
-      responses:
-        '200':
-          description: Tokens emitidos
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Tokens' }
-        '400': { $ref: '#/components/responses/Invalido' }
-        '401': { $ref: '#/components/responses/NoAutenticado' }
-        '429': { description: Demasiados intentos de login }
-  /auth/refresh:
-    post:
-      tags: [Auth]
-      summary: Renovar tokens (el refresh token se rota, el anterior deja de servir)
-      operationId: refresh
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [refreshToken]
-              properties:
-                refreshToken: { type: string }
-      responses:
-        '200':
-          description: Tokens nuevos
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Tokens' }
-        '401': { $ref: '#/components/responses/NoAutenticado' }
-  /auth/logout:
-    post:
-      tags: [Auth]
-      summary: "Revocar un refresh token (ej.: celular perdido)"
-      operationId: logout
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                refreshToken: { type: string }
-      responses:
-        '204': { description: Revocado }
+
   /api/inspecciones:
     get:
       tags: [Inspecciones]
       summary: Listar inspecciones (inspector ve solo las suyas; supervisor, todas)
       operationId: listarInspecciones
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       responses:
         '200':
           description: Lista de inspecciones
@@ -94,7 +39,7 @@ paths:
       tags: [Inspecciones]
       summary: Asignar o reasignar una inspección (solo supervisor)
       operationId: asignarInspeccion
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       parameters:
         - name: id
           in: path
@@ -126,7 +71,7 @@ paths:
       tags: [Actas]
       summary: Listar actas (inspector ve solo las suyas)
       operationId: listarActas
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       responses:
         '200':
           description: Lista de actas (máx. 100, más recientes primero)
@@ -155,7 +100,7 @@ paths:
         La asociación al expediente es **asíncrona**: el acta queda `pendiente_asociacion`
         y el servicio de sincronización la envía al sistema municipal.
       operationId: cargarActa
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       requestBody:
         required: true
         content:
@@ -193,7 +138,7 @@ paths:
       tags: [Actas]
       summary: Consultar un acta y el estado de su asociación al expediente
       operationId: obtenerActa
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       responses:
         '200':
           description: El acta
@@ -209,7 +154,7 @@ paths:
       tags: [Mobile (BFF)]
       summary: Mis inspecciones, en formato liviano para la app
       operationId: mobileInspecciones
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       responses:
         '200':
           description: Lista reducida
@@ -235,7 +180,7 @@ paths:
       summary: Sincronizar en un solo pedido las actas acumuladas sin conexión
       description: Hasta 50 actas por pedido. Cada una devuelve su propio resultado.
       operationId: mobileSync
-      security: [{ bearerAuth: [] }]
+      security: [{ keycloak: [openid] }]
       requestBody:
         required: true
         content:
@@ -283,24 +228,19 @@ paths:
         '400': { $ref: '#/components/responses/Invalido' }
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    keycloak:
+      type: oauth2
+      description: |
+        OIDC con Keycloak. Flujo Authorization Code + PKCE (cliente público "swagger-ui").
+        Discovery: http://localhost:8180/realms/inspecciones/.well-known/openid-configuration
+      flows:
+        authorizationCode:
+          authorizationUrl: http://localhost:8180/realms/inspecciones/protocol/openid-connect/auth
+          tokenUrl: http://localhost:8180/realms/inspecciones/protocol/openid-connect/token
+          scopes:
+            openid: Identidad del usuario (OIDC)
+            profile: Nombre y usuario
   schemas:
-    Login:
-      type: object
-      required: [username, password]
-      properties:
-        username: { type: string }
-        password: { type: string }
-    Tokens:
-      type: object
-      properties:
-        accessToken: { type: string }
-        refreshToken: { type: string }
-        tokenType: { type: string, example: Bearer }
-        expiresIn: { type: integer, description: "Segundos de vida del access token", example: 900 }
     Inspeccion:
       type: object
       properties:

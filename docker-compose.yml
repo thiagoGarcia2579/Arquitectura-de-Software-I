@@ -88,6 +88,9 @@ services:
     image: swaggerapi/swagger-ui:v5.17.14
     environment:
       SWAGGER_JSON: /spec/openapi.yaml
+      OAUTH_CLIENT_ID: swagger-ui
+      OAUTH_USE_PKCE: "true"
+      OAUTH_SCOPES: openid profile
     volumes:
       - ./openapi.yaml:/spec/openapi.yaml:ro
     ports:
