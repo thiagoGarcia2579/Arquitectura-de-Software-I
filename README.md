@@ -1,5 +1,11 @@
 # TP Arquitectura de Software 1 — Dominio 2 · Inspecciones de obra municipales
 
+## Integrantes
+- Thiago Garcia
+- Carolina
+- Valentin Varela
+- Aldana Gomez
+
 **Escenario 2B · Municipio extenso** (120 inspectores, zonas sin señal, NFR estrella: funcionamiento sin conexión).
 
 Este repo implementa **el corte**: *login* + el caso de uso mínimo **"un inspector completa un acta y queda asociada al expediente"**. El backend se levanta con Docker Compose; la interfaz web se inicia por separado.
@@ -53,6 +59,7 @@ Abrí **http://localhost:5173**. Vite reenvía las llamadas al backend en `http:
 
 ---
 
+
 ## Arquitectura
 
 ```
@@ -91,17 +98,6 @@ Abrí **http://localhost:5173**. Vite reenvía las llamadas al backend en `http:
 | `db` | PostgreSQL. No publica puertos. Volumen `pgdata`. |
 | `swagger-ui` | Documentación generada desde `openapi.yaml`. |
 
-### Decisiones clave (para justificar en la defensa)
-
-- **El `id` del acta lo genera el celular (UUID)** y se carga con `PUT /actas/{id}`: es **idempotente**. Si el celular reintenta tras un corte, no se duplica.
-- **La asociación al expediente es asíncrona (patrón outbox).** `PUT /actas` guarda el acta y el pendiente en la *misma transacción*; después `sync` llama al SOAP. Si el sistema municipal está caído o lento, no se pierde nada ni se bloquea al inspector.
-- **Reintentos con criterio.** Error de servidor o timeout → backoff exponencial (4 s, 8 s, 16 s… tope 5 min, máx. 8 intentos). `Fault` de cliente (ej.: expediente inexistente) → error definitivo, no se reintenta.
-- **Defensa en profundidad.** El gateway filtra y limita; la API valida token, rol y asignación. El gateway no conoce las asignaciones, así que no puede ser la única barrera.
-- **Acta cerrada = inmutable** (tiene valor legal). Un reintento nunca la modifica.
-- **Refresh token rotativo con detección de reuso.** Si se reutiliza uno ya usado, se revocan todos los del usuario.
-- **Contraseñas con bcrypt** (pgcrypto). Secretos en `.env`, fuera del repo.
-
----
 
 ## Usuarios de prueba
 
@@ -113,6 +109,29 @@ Abrí **http://localhost:5173**. Vite reenvía las llamadas al backend en `http:
 | `admin1` | `admin123` | administrativo | — |
 
 IDs de inspecciones: `aaaaaaaa-0000-0000-0000-00000000000X` (X = 1 a 4). Las 0001 y 0004 son del **mismo expediente** (`EXP-2025-0001`) pero de **distinto inspector**, para ver el caso "dos inspectores sobre el mismo expediente".
+
+---
+
+
+## Prueba carga de acta sin conexion
+
+Para simular una carga sin conexion, ejecutar el siguiente comando
+
+```bash
+docker compose stop gateway
+```
+
+Crear con un inspector las actas
+
+Verificar el estado del acta
+
+Volver a levantar el gateway con el siguiente comando
+
+```bash
+docker compose start gateway
+```
+
+Verificar si las actas se insertaron correctamente
 
 ---
 
