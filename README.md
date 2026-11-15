@@ -2,7 +2,7 @@
 
 ## Integrantes
 - Thiago Garcia
-- Carolina
+- Carolina Rodriguez
 - Valentin Varela
 - Aldana Gomez
 
@@ -18,47 +18,30 @@ Este repo implementa **el corte**: *login* + el caso de uso mínimo **"un inspec
 - Puertos libres en tu máquina: **8000**, **8080**.
 - Node.js y npm (para correr la interfaz web).
 
-## Levantarlo (3 pasos)
+## Levantarlo
 
 ```bash
-# 1. Crear el archivo de configuración y secretos (no se sube al repo)
-cp .env.example .env            # Windows PowerShell:  Copy-Item .env.example .env
-
-# 2. Construir y levantar todo
-docker compose up -d --build
-
-# 3. Verificar
-docker compose ps
-
-# 4. Si falla, para reiniciar
-docker compose down -v
-docker compose up -d --build
-
+git clone https://github.com/thiagoGarcia2579/Arquitectura-de-Software-I.git
+cd Arquitectura-de-Software-I
+docker compose up -d --build --wait
 ```
 
-La primera vez tarda unos minutos (baja imágenes e instala dependencias). Tenés que ver `db` como **healthy** y el resto como **running**. Después abrí:
+No hace falta crear ningún archivo `.env`: todo tiene valores por defecto de desarrollo.
+La primera vez tarda unos minutos (baja imágenes y Keycloak demora ~1 minuto en arrancar).
 
 | URL | Qué es |
 |---|---|
-| http://localhost:8080 | **Swagger UI** con el contrato (acá se prueba todo) |
-| http://localhost:8000/health | Gateway funcionando |
+| http://localhost:5173 | **Aplicación web** (login con Keycloak, funciona sin conexión) |
+| http://localhost:8080 | **Swagger UI** con el contrato v1 (botón Authorize) |
+| http://localhost:8180/admin | Consola de Keycloak (`admin` / `admin`), realm `inspecciones` |
+| http://localhost:8000/health | Gateway |
 
-Para apagar: `docker compose down` (conserva los datos) o `docker compose down -v` (borra todo y vuelve a cargar los datos de ejemplo).
+Para apagar: `docker compose down` (conserva los datos) o `docker compose down -v` (borra todo).
+Para ver los reintentos hacia el sistema municipal, creá un `.env` con `MOCK_FALLO_PCT=30`.
 
-## Correr la interfaz web
-
-Primero levantá el backend con los pasos anteriores. Luego, desde la raíz del repo, instalá las dependencias e iniciá el servidor de desarrollo:
-
-```bash
-cd frontend;
-npm ci;
-npm run dev
-```
-
-Abrí **http://localhost:5173**. Vite reenvía las llamadas al backend en `http://localhost:8000`. Para detener la interfaz, presioná `Ctrl+C` en esa terminal; para detener el backend, ejecutá `docker compose down` desde la raíz del repo.
-
----
-
+### Cambiar de usuario (SSO)
+Keycloak recuerda la sesión: al salir, la app cierra también la sesión de Keycloak. En Swagger,
+el botón Logout solo borra el token; para cambiar de usuario abrí una ventana de incógnito por rol.
 
 ## Arquitectura
 
@@ -90,9 +73,8 @@ Abrí **http://localhost:5173**. Vite reenvía las llamadas al backend en `http:
 | Servicio | Rol |
 |---|---|
 | `gateway` | Único punto de entrada. Enruta por prefijo (`/auth`, `/api`, `/mobile`), limita intentos de login (10/min) y permite CORS solo desde Swagger UI. |
-| `auth` | Login. Emite *access token* JWT (15 min) y *refresh token* rotativo (7 días, pensado para zonas sin señal). |
 | `api` | Inspecciones y actas. Valida el JWT, el rol y la **regla fina** (el inspector solo carga actas de SUS inspecciones). |
-| `bff-inspector` | Adapta la API a la app Android: lista liviana y `POST /mobile/sync` para mandar en un pedido lo acumulado offline. |
+| `bff-inspector` | Adapta la API a la app Android: lista liviana y `POST /mobile/v1/sync` para mandar en un pedido lo acumulado offline. |
 | `sync` | **Capa anticorrupción.** Único componente que habla SOAP. Lee el *outbox* y asocia cada acta al expediente, con reintentos. |
 | `mock-expedientes` | **Simulador** del sistema municipal heredado: solo SOAP/XML, lento y con fallos intermitentes. |
 | `db` | PostgreSQL. No publica puertos. Volumen `pgdata`. |
@@ -138,11 +120,9 @@ Verificar si las actas se insertaron correctamente
 ## Probar el caso de uso mínimo
 
 ### Con Swagger UI (lo más simple)
-
-1. http://localhost:8080 → `POST /auth/login` → *Try it out* con `inspector1` / `inspector123` → *Execute*.
-2. Copiá el `accessToken`, apretá **Authorize** (arriba a la derecha) y pegalo (solo el token, sin "Bearer").
-3. `PUT /api/actas/{id}` → usá el id `bbbbbbbb-0000-0000-0000-000000000001` y el body de ejemplo → *Execute*. Devuelve **201** con `estado: pendiente_asociacion`.
-4. Esperá unos segundos y hacé `GET /api/actas/{id}`: pasa a `asociada` (o queda reintentando si el mock falló).
+1. Abrí http://localhost:8080 -> Hacé clic en Authorize. Dejá vacío client_secret. Iniciá sesión con un usuario de prueba con `inspector1` / `inspector123` 
+3. `PUT /api/v1/actas/{id}` → usá el id `bbbbbbbb-0000-0000-0000-000000000001` y el body de ejemplo → *Execute*. Devuelve **201** con `estado: pendiente_asociacion`.
+4. Esperá unos segundos y hacé `GET /api/v1/actas/{id}`: pasa a `asociada` (o queda reintentando si el mock falló).
 5. Mirá cómo trabaja la sincronización en vivo: `docker compose logs -f sync`.
 
 ### Con curl (Git Bash, macOS, Linux o WSL)
@@ -155,12 +135,12 @@ TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
   | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
 
 # Cargar un acta (el id lo inventa el cliente)
-curl -i -X PUT http://localhost:8000/api/actas/bbbbbbbb-0000-0000-0000-000000000001 \
+curl -i -X PUT http://localhost:8000/api/v1/actas/bbbbbbbb-0000-0000-0000-000000000001 \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"inspeccionId":"aaaaaaaa-0000-0000-0000-000000000001","observaciones":"Sin cartel de obra","cantidadFotos":6}'
 
 # Consultar su estado (repetir hasta que diga "asociada")
-curl -s http://localhost:8000/api/actas/bbbbbbbb-0000-0000-0000-000000000001 -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:8000/api/v1/actas/bbbbbbbb-0000-0000-0000-000000000001 -H "Authorization: Bearer $TOKEN"
 ```
 
 > En PowerShell `curl` es un alias de otro comando: usá Swagger UI o `curl.exe`.
@@ -173,13 +153,13 @@ curl -s http://localhost:8000/api/actas/bbbbbbbb-0000-0000-0000-000000000001 -H 
 |---|---|
 | **Idempotencia** | Repetí el mismo `PUT` del acta: la segunda vez devuelve **200** (no 201) y no crea otra. |
 | **Regla fina** (403) | Con `inspector1`, `PUT` de un acta sobre la inspección `aaaaaaaa-0000-0000-0000-000000000003` (es de `inspector2`) → **403**. |
-| **Matriz de permisos** | Con `admin1`: `GET /api/inspecciones` → **403**; `PUT /api/actas/...` → **403**. Con `supervisor1`: `GET /api/actas` → **200** (ve todas). |
+| **Matriz de permisos** | Con `admin1`: `GET /api/v1/inspecciones` → **403**; `PUT /api/v1/actas/...` → **403**. Con `supervisor1`: `GET /api/v1/actas` → **200** (ve todas). |
 | **Sin token / vencido** | Cualquier endpoint sin `Authorization` → **401**. |
-| **Reasignación** | Con `supervisor1`: `PATCH /api/inspecciones/{id}/asignacion` con el `inspectorId` de otro inspector. Luego el inspector original ya no puede cargar sobre esa inspección. |
+| **Reasignación** | Con `supervisor1`: `PATCH /api/v1/inspecciones/{id}/asignacion` con el `inspectorId` de otro inspector. Luego el inspector original ya no puede cargar sobre esa inspección. |
 | **Reintentos del SOAP** | `docker compose logs -f sync`: líneas `↻` (reintento) y `✔` (asociada). El mock falla el 30 % de las veces a propósito. |
 | **Error definitivo** | Cambiá en la base el `expediente_id` de una inspección por uno inexistente (ver abajo) y cargá un acta: el acta termina en `error_asociacion` sin reintentos infinitos. |
 | **Sistema externo caído** | `docker compose stop mock-expedientes`, cargá un acta (sigue dando **201**), después `docker compose start mock-expedientes`: se asocia sola. |
-| **Sincronización offline** | `POST /mobile/sync` con varias actas juntas (ejemplo en Swagger). Incluye una ajena: viene `rechazada` sin frenar a las demás. |
+| **Sincronización offline** | `POST /mobile/v1/sync` con varias actas juntas (ejemplo en Swagger). Incluye una ajena: viene `rechazada` sin frenar a las demás. |
 | **Refresh rotativo** | `POST /auth/refresh` dos veces con el mismo `refreshToken`: la segunda da **401** y revoca todos los del usuario. |
 
 Ver la base de datos (no publica puertos, se entra por el contenedor):
@@ -195,19 +175,6 @@ docker compose exec db psql -U inspecciones -d inspecciones -c "UPDATE inspeccio
 
 ---
 
-## Configuración (`.env`)
-
-| Variable | Qué hace |
-|---|---|
-| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Credenciales de Postgres. |
-| `JWT_SECRET` | Secreto con el que `auth` firma y `api` valida los tokens (mínimo 32 caracteres). |
-| `ACCESS_TTL_MIN`, `REFRESH_TTL_DAYS` | Vida de los tokens. |
-| `MOCK_LATENCIA_MS` | Demora artificial del sistema municipal simulado. |
-| `MOCK_FALLO_PCT` | % de pedidos SOAP que fallan. Poné `0` para una demo sin errores. |
-
-Si cambiás `DB_*` después de la primera vez: `docker compose down -v` y volver a levantar (Postgres solo lee esas variables al crear el volumen).
-
----
 
 ## Errores comunes
 
@@ -228,11 +195,10 @@ Si cambiás `DB_*` después de la primera vez: `docker compose down -v` y volver
 ## Qué NO está implementado (va en el diseño, no en el corte)
 
 - **Fotos**: el acta solo registra `cantidadFotos` (0 a 20). En el diseño completo van a un *object storage* con subida en partes reanudable, compresión en el celular y borrado local tras confirmar la subida.
-- **App Android real** y su base local cifrada: el BFF y `POST /mobile/sync` muestran el contrato que usaría.
+- **App Android real** y su base local cifrada: el BFF y `POST /mobile/v1/sync` muestran el contrato que usaría.
 - **Reasignación durante un corte de señal**: hoy, si la inspección ya no es del inspector al sincronizar, la API responde **403**. El diseño propone derivar esas actas a revisión del supervisor.
 - **Borrador, revisión y aprobación de actas, intimaciones y clausuras, web de supervisión.**
 - **`ConsultarExpediente`**: el mock lo expone, pero ningún servicio lo consume todavía.
-- **Proveedor de identidad completo (Keycloak/OIDC)**: acá `auth` es un servicio propio y chico, con secreto compartido (HS256). En producción convendría un IdP con claves asimétricas (RS256 + JWKS), para que la API valide sin conocer el secreto de firma.
 
 ## Estructura
 
