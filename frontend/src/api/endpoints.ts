@@ -1,19 +1,21 @@
 import { request } from './http';
-import type {
-  Acta, ActaNueva, Inspeccion, InspeccionLiviana, ResultadoSync, Tokens,
-} from './types';
+import type { Acta, ActaNueva, Inspeccion, InspeccionLiviana, ResultadoSync } from './types';
 
-export const listarInspecciones = () => request<Inspeccion[]>('/api/inspecciones');
+// Versión del contrato: si cambia, se cambia en un solo lugar.
+const API = '/api/v1';
+const MOBILE = '/mobile/v1';
+
+export const listarInspecciones = () => request<Inspeccion[]>(`${API}/inspecciones`);
 
 export const reasignarInspeccion = (id: string, inspectorId: string) =>
-  request<Inspeccion>(`/api/inspecciones/${id}/asignacion`, { method: 'PATCH', body: { inspectorId } });
+  request<Inspeccion>(`${API}/inspecciones/${id}/asignacion`, { method: 'PATCH', body: { inspectorId } });
 
-export const listarActas = () => request<Acta[]>('/api/actas');
+export const listarActas = () => request<Acta[]>(`${API}/actas`);
 
-export const obtenerActa = (id: string) => request<Acta>(`/api/actas/${id}`);
+export const obtenerActa = (id: string) => request<Acta>(`${API}/actas/${id}`);
 
 export const misInspeccionesMobile = () =>
-  request<{ total: number; items: InspeccionLiviana[] }>('/mobile/inspecciones');
+  request<{ total: number; items: InspeccionLiviana[] }>(`${MOBILE}/inspecciones`);
 
 export const syncActas = (actas: (ActaNueva & { id: string })[]) =>
-  request<{ resultados: ResultadoSync[] }>('/mobile/sync', { method: 'POST', body: { actas } });
+  request<{ resultados: ResultadoSync[] }>(`${MOBILE}/sync`, { method: 'POST', body: { actas } });

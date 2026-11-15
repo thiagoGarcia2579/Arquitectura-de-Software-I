@@ -81,7 +81,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Inspector: solo las suyas. Supervisor: todas. Administrativo: 403 (matriz de permisos).
-app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor','administrativo'), async (req, res) => {
+app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor', 'administrativo'), async (req, res) => {
   const propias = req.usuario.rol === 'inspector';
   const { rows } = await pool.query(
     `SELECT * FROM inspecciones ${propias ? 'WHERE inspector_id = $1' : ''} ORDER BY creada_en, id`,
@@ -164,7 +164,7 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
       [id]
     )).rows[0];
 
-    res.status(201).location(`/actas/${id}`).json(aActa(creadaConExpediente));
+    res.status(201).location(`/api/v1/actas/${id}`).json(aActa(creadaConExpediente));
   } catch (err) {
     await client.query('ROLLBACK').catch(() => { });
     throw err;

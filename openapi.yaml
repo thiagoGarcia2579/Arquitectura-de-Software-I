@@ -6,8 +6,10 @@ info:
     Inspecciones de obra municipales (Dominio 2B · municipio extenso).
     Todo entra por el gateway (`http://localhost:8000`).
 
-    **Cómo probar en Swagger UI:** Tocá Authorize, dejá vacío el client_secret y logueate con un usuario de prueba (inspector1, supervisor1, admin1). Para cerrar sesion, ingresa a la siguiente pagina http://localhost:8180/realms/inspecciones/protocol/openid-connect/logout
+    **Cómo probar en Swagger UI:** Tocá Authorize, dejá vacío el client_secret y logueate con un usuario de prueba (inspector1, supervisor1, admin1). Para cerrar sesion, ingresa a la siguiente pagina http://localhost:8180/realms/inspecciones/protocol/openid-connect/logout .
     
+    **Versionado.** La versión mayor va en la URL: `/api/v1` y `/mobile/v1`. 
+
 servers:
   - url: http://localhost:8000
     description: Gateway (vista desde tu navegador)
@@ -18,7 +20,7 @@ tags:
   - name: Mobile (BFF)
 paths:
 
-  /api/inspecciones:
+  /api/v1/inspecciones:
     get:
       tags: [Inspecciones]
       summary: Listar inspecciones (inspector ve solo las suyas; supervisor, todas)
@@ -34,7 +36,7 @@ paths:
                 items: { $ref: '#/components/schemas/Inspeccion' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
-  /api/inspecciones/{id}/asignacion:
+  /api/v1/inspecciones/{id}/asignacion:
     patch:
       tags: [Inspecciones]
       summary: Asignar o reasignar una inspección (solo supervisor)
@@ -66,7 +68,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
-  /api/actas:
+  /api/v1/actas:
     get:
       tags: [Actas]
       summary: Listar actas (inspector ve solo las suyas)
@@ -82,7 +84,7 @@ paths:
                 items: { $ref: '#/components/schemas/Acta' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
-  /api/actas/{id}:
+  /api/v1/actas/{id}:
     parameters:
       - name: id
         in: path
@@ -149,7 +151,7 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
-  /mobile/inspecciones:
+  /mobile/v1/inspecciones:
     get:
       tags: [Mobile (BFF)]
       summary: Mis inspecciones, en formato liviano para la app
@@ -174,7 +176,7 @@ paths:
                         direccion: { type: string }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
-  /mobile/sync:
+  /mobile/v1/sync:
     post:
       tags: [Mobile (BFF)]
       summary: Sincronizar en un solo pedido las actas acumuladas sin conexión
