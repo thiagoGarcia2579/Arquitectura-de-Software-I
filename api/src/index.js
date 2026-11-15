@@ -208,6 +208,12 @@ app.get('/actas/:id', autenticar, permitir('inspector', 'supervisor', 'administr
 
 // Cualquier error no previsto también sale como Problem Details
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return problem(res, 413, 'Cuerpo demasiado grande', 'El cuerpo del pedido supera los 256 KB.', req.originalUrl);
+  }
+  if (err.type === 'entity.parse.failed') {
+    return problem(res, 400, 'JSON inválido', 'El cuerpo del pedido no es un JSON válido.', req.originalUrl);
+  }
   console.error(err);
   problem(res, 500, 'Error interno', 'Ocurrió un error inesperado.', req.originalUrl);
 });
