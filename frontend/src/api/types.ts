@@ -22,7 +22,7 @@ export interface Inspeccion {
   creadaEn: string;
 }
 
-// GET /mobile/inspecciones: versión liviana del BFF (sin inspectorId ni creadaEn).
+// Datos de la inspección que se conservan en el dispositivo.
 export interface InspeccionLiviana {
   id: string;
   expediente: string;
@@ -35,6 +35,8 @@ export interface Acta {
   id: string;
   inspeccionId: string;
   inspectorId: string;
+  expedienteId: string;
+  direccion: string;
   observaciones: string;
   cantidadFotos: number;
   estado: EstadoActa;

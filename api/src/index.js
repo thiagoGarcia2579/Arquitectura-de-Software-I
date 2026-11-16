@@ -27,6 +27,7 @@ const pool = new pg.Pool({
 });
 
 const app = express();
+app.use('/v1/sync', express.json({ limit: '1mb' }));
 app.use(express.json({ limit: '256kb' }));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,6 +70,7 @@ const aInspeccion = (r) => ({
 });
 const aActa = (r) => ({
   id: r.id, inspeccionId: r.inspeccion_id, inspectorId: r.inspector_id, expedienteId: r.expediente_id,
+  direccion: r.direccion,
   observaciones: r.observaciones, cantidadFotos: r.cantidad_fotos, estado: r.estado,
   creadaEnDispositivo: r.creada_en_dispositivo, recibidaEn: r.recibida_en,
   asociadaEn: r.asociada_en, detalleAsociacion: r.detalle_asociacion,
@@ -104,20 +106,18 @@ app.patch('/inspecciones/:id/asignacion', autenticar, permitir('supervisor'), as
   res.json(aInspeccion(rows[0]));
 });
 
-// PUT con id generado por el cliente => IDEMPOTENTE: si el celular reintenta tras un corte,
-// no se duplica el acta. El acta cerrada es inmutable: un reintento nunca la modifica.
-app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
-  const { id } = req.params;
-  const { inspeccionId, observaciones = '', cantidadFotos = 0, creadaEnDispositivo = null } = req.body ?? {};
+// Compartida por la carga individual y por lote: cada acta tiene su propia transacción.
+async function cargarActa(id, body, usuario) {
+  const { inspeccionId, observaciones = '', cantidadFotos = 0, creadaEnDispositivo = null } = body ?? {};
 
-  if (!UUID.test(id) || typeof inspeccionId !== 'string' || !UUID.test(inspeccionId)) {
-    return problem(res, 400, 'Datos inválidos', 'El id del acta y "inspeccionId" deben ser UUID válidos.', req.originalUrl);
+  if (typeof id !== 'string' || !UUID.test(id) || typeof inspeccionId !== 'string' || !UUID.test(inspeccionId)) {
+    return { status: 400, title: 'Datos inválidos', detail: 'El id del acta y "inspeccionId" deben ser UUID válidos.' };
   }
   if (typeof observaciones !== 'string' || observaciones.length > 5000 ||
     !Number.isInteger(cantidadFotos) || cantidadFotos < 0 || cantidadFotos > 20 ||
     (creadaEnDispositivo !== null && (typeof creadaEnDispositivo !== 'string' || Number.isNaN(Date.parse(creadaEnDispositivo))))) {
-    return problem(res, 400, 'Datos inválidos',
-      '"observaciones" (texto, máx. 5000), "cantidadFotos" (entero 0 a 20) y "creadaEnDispositivo" (fecha ISO, opcional).', req.originalUrl);
+    return { status: 400, title: 'Datos inválidos',
+      detail: '"observaciones" (texto, máx. 5000), "cantidadFotos" (entero 0 a 20) y "creadaEnDispositivo" (fecha ISO, opcional).' };
   }
 
   const client = await pool.connect();
@@ -127,31 +127,31 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
     const insp = await client.query('SELECT * FROM inspecciones WHERE id = $1', [inspeccionId]);
     if (insp.rowCount === 0) {
       await client.query('ROLLBACK');
-      return problem(res, 404, 'Inspección no encontrada', `No existe la inspección ${inspeccionId}.`, req.originalUrl);
+      return { status: 404, title: 'Inspección no encontrada', detail: `No existe la inspección ${inspeccionId}.` };
     }
-    if (insp.rows[0].inspector_id !== req.usuario.id) {
+    if (insp.rows[0].inspector_id !== usuario.id) {
       await client.query('ROLLBACK');
-      return problem(res, 403, 'Prohibido', 'La inspección no está asignada a este inspector.', req.originalUrl);
+      return { status: 403, title: 'Prohibido', detail: 'La inspección no está asignada a este inspector.' };
     }
 
     const ins = await client.query(
       `INSERT INTO actas (id, inspeccion_id, inspector_id, observaciones, cantidad_fotos, creada_en_dispositivo)
        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING RETURNING *`,
-      [id, inspeccionId, req.usuario.id, observaciones, cantidadFotos, creadaEnDispositivo],
+      [id, inspeccionId, usuario.id, observaciones, cantidadFotos, creadaEnDispositivo],
     );
 
     if (ins.rowCount === 0) {            // reintento: el acta ya existía
       // Hacemos JOIN para traer el expediente_id en el reintento (respuesta 200)
       const previa = (await client.query(
-        `SELECT a.*, i.expediente_id FROM actas a JOIN inspecciones i ON i.id = a.inspeccion_id WHERE a.id = $1`,
+        `SELECT a.*, i.expediente_id, i.direccion FROM actas a JOIN inspecciones i ON i.id = a.inspeccion_id WHERE a.id = $1`,
         [id]
       )).rows[0];
 
       await client.query('ROLLBACK');
-      if (previa.inspector_id !== req.usuario.id) {
-        return problem(res, 409, 'Conflicto', 'Ya existe un acta con ese id.', req.originalUrl);
+      if (previa.inspector_id !== usuario.id) {
+        return { status: 409, title: 'Conflicto', detail: 'Ya existe un acta con ese id.' };
       }
-      return res.status(200).json(aActa(previa));
+      return { status: 200, acta: aActa(previa) };
     }
 
     // Outbox
@@ -160,24 +160,63 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
 
     // Para la respuesta 201 (creada con éxito), necesitamos el expediente_id haciendo JOIN también
     const creadaConExpediente = (await client.query(
-      `SELECT a.*, i.expediente_id FROM actas a JOIN inspecciones i ON i.id = a.inspeccion_id WHERE a.id = $1`,
+      `SELECT a.*, i.expediente_id, i.direccion FROM actas a JOIN inspecciones i ON i.id = a.inspeccion_id WHERE a.id = $1`,
       [id]
     )).rows[0];
 
-    res.status(201).location(`/actas/${id}`).json(aActa(creadaConExpediente));
+    return { status: 201, acta: aActa(creadaConExpediente) };
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => { });
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Error al revertir la transacción:', rollbackError);
+    }
     throw err;
   } finally {
     client.release();
   }
+}
+
+// PUT idempotente: un reintento no duplica ni modifica el acta cerrada.
+app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
+  const resultado = await cargarActa(req.params.id, req.body, req.usuario);
+  if (resultado.status >= 400) {
+    return problem(res, resultado.status, resultado.title, resultado.detail, req.originalUrl);
+  }
+  if (resultado.status === 201) res.location(`/actas/${req.params.id}`);
+  return res.status(resultado.status).json(resultado.acta);
+});
+
+app.post('/v1/sync', autenticar, permitir('inspector'), async (req, res) => {
+  const actas = req.body?.actas;
+  if (!Array.isArray(actas) || actas.length === 0 || actas.length > 50) {
+    return problem(res, 400, 'Datos inválidos', 'Se requiere "actas": lista de 1 a 50 elementos.', req.originalUrl);
+  }
+
+  const resultados = [];
+  for (const acta of actas) {
+    const id = typeof acta?.id === 'string' ? acta.id : null;
+    try {
+      const resultado = await cargarActa(id, acta, req.usuario);
+      resultados.push({
+        id,
+        http: resultado.status,
+        estado: resultado.status === 201 ? 'creada' : resultado.status === 200 ? 'ya_recibida' : 'rechazada',
+        ...(resultado.detail && { detalle: resultado.detail }),
+      });
+    } catch (err) {
+      console.error('Error al sincronizar acta:', err);
+      resultados.push({ id, http: 500, estado: 'rechazada', detalle: 'Error interno al procesar el acta; se puede reintentar.' });
+    }
+  }
+  return res.json({ resultados });
 });
 
 // Inspector: solo las propias. Supervisor y administrativo: todas.
 app.get('/actas', autenticar, permitir('inspector', 'supervisor', 'administrativo'), async (req, res) => {
   const propias = req.usuario.rol === 'inspector';
   const { rows } = await pool.query(
-    `SELECT a.*, i.expediente_id 
+    `SELECT a.*, i.expediente_id, i.direccion
      FROM actas a 
      JOIN inspecciones i ON i.id = a.inspeccion_id 
      ${propias ? 'WHERE a.inspector_id = $1' : ''} 
@@ -193,7 +232,7 @@ app.get('/actas/:id', autenticar, permitir('inspector', 'supervisor', 'administr
 
   // Hacemos JOIN con inspecciones para obtener el expediente_id
   const { rows } = await pool.query(
-    `SELECT a.*, i.expediente_id 
+    `SELECT a.*, i.expediente_id, i.direccion
      FROM actas a 
      JOIN inspecciones i ON i.id = a.inspeccion_id 
      WHERE a.id = $1`,
@@ -208,6 +247,12 @@ app.get('/actas/:id', autenticar, permitir('inspector', 'supervisor', 'administr
 
 // Cualquier error no previsto también sale como Problem Details
 app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return problem(res, 413, 'Cuerpo demasiado grande', 'El cuerpo supera el tamaño permitido.', req.originalUrl);
+  }
+  if (err.type === 'entity.parse.failed') {
+    return problem(res, 400, 'Cuerpo inválido', 'Se esperaba JSON válido.', req.originalUrl);
+  }
   console.error(err);
   problem(res, 500, 'Error interno', 'Ocurrió un error inesperado.', req.originalUrl);
 });

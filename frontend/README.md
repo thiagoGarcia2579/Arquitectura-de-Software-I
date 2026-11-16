@@ -1,19 +1,85 @@
 # Frontend · Inspecciones de obra
 
-SPA en React + Vite + TypeScript + Tailwind. Habla con el backend a través del gateway (`/auth`, `/api`, `/mobile`).
+SPA en React + Vite + TypeScript + Tailwind. El inicio de sesión usa Keycloak con OIDC Authorization Code + PKCE. Las llamadas a la API pasan por el gateway mediante `/api`.
 
-## Cómo correrlo
+## Requisitos
 
-1. Levantar el backend (desde la carpeta superior): `docker compose up -d --build`
-2. En esta carpeta:
+- Docker Desktop abierto y con el motor en ejecución.
+- Node.js y npm.
+- Puertos libres: **5173** (Vite), **8000** (gateway) y **8180** (Keycloak).
 
-```bash
-npm install && npm run dev
+## Cómo correrlo en Windows (PowerShell)
+
+Desde la raíz del repositorio, si todavía no existe `.env`, crear la configuración local y levantar los servicios:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up -d --build
+docker compose ps
 ```
 
-Abrir http://localhost:5173. El gateway solo permite CORS desde `:8080`, por eso el proxy de Vite reenvía `/auth`, `/api` y `/mobile` a `http://localhost:8000` y el frontend usa rutas relativas. La URL del gateway se configura en `.env` (ver `.env.example`).
+Esperá a que `db` figure como `healthy` y que `keycloak`, `gateway` y `swagger-ui` estén corriendo. Luego, en una segunda terminal:
 
-Usuarios de prueba: `inspector1` / `inspector123`, `inspector2` / `inspector123`, `supervisor1` / `supervisor123`, `admin1` / `admin123`.
+```powershell
+Set-Location frontend
+npm ci
+npm run dev
+```
+
+Abrí http://localhost:5173. Al tocar **Ingresar**, el navegador te redirige a Keycloak en http://localhost:8180; después de autenticarte vuelve a `/login/callback` y te lleva a la pantalla de tu rol.
+
+Vite reenvía `/api` y `/health` a `http://localhost:8000`. La autoridad OIDC predeterminada es `http://localhost:8180/realms/inspecciones` y el cliente es `inspecciones-web`; para cambiarlos, definí `VITE_OIDC_AUTHORITY` o `VITE_OIDC_CLIENT_ID` en `frontend/.env.local`. Para cambiar la dirección del gateway, definí `VITE_GATEWAY_URL`.
+
+Usuarios de prueba:
+
+| Usuario | Contraseña | Rol |
+|---|---|---|
+| `inspector1` | `inspector123` | Inspector |
+| `inspector2` | `inspector123` | Inspector |
+| `supervisor1` | `supervisor123` | Supervisor |
+| `admin1` | `admin123` | Administrativo |
+
+Para apagar los servicios: `docker compose down` desde la raíz. Esto conserva los datos de Postgres.
+
+## Probar en Android por USB (Windows)
+
+Esto permite probar la PWA existente en el celular; no genera una app Android nativa.
+
+1. Levantá el backend con Docker como se indica arriba. En una terminal de la carpeta `frontend`, instalá las dependencias con `npm ci` si todavía no lo hiciste y ejecutá:
+
+   ```powershell
+   .\node_modules\.bin\vite.cmd --host 127.0.0.1
+   ```
+
+   Si Vite ya estaba ejecutándose, detenelo primero con `Ctrl+C`. Dejá esta terminal abierta y comprobá que use el puerto **5173**. En la computadora, para iniciar sesión, seguí usando http://localhost:5173.
+
+2. Descargá [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) para Windows y extraé el ZIP. En el celular, activá **Opciones para desarrolladores → Depuración USB** y conectalo con un cable que permita transferir datos.
+3. En el Explorador de Windows, abrí la carpeta `platform-tools`, escribí `powershell` en la barra de direcciones y presioná Enter. Ejecutá:
+
+   ```powershell
+   .\adb.exe devices
+   ```
+
+   Desbloqueá el celular y aceptá el aviso de autorización de depuración USB. Volvé a ejecutar el comando: el dispositivo debe aparecer con el estado `device`.
+
+4. En esa misma terminal, configurá los túneles hacia Vite y Keycloak:
+
+   ```powershell
+   .\adb.exe reverse tcp:5173 tcp:5173
+   .\adb.exe reverse tcp:8180 tcp:8180
+   .\adb.exe reverse --list
+   ```
+
+5. Con el cable conectado y los servicios corriendo, abrí **http://localhost:5173** en Chrome del celular e iniciá sesión. Podés agregar la PWA a la pantalla de inicio desde el menú de Chrome.
+
+Si el celular se desconecta o aparece un error al contactar al proveedor de identidad, comprobá `devices` y `reverse --list` y volvé a ejecutar los dos comandos `reverse` si faltan los túneles. Si la página no carga, verificá que Vite siga ejecutándose en el puerto 5173.
+
+## Problemas al iniciar
+
+- **No se puede conectar al daemon de Docker**: abrí Docker Desktop y esperá a que indique que el motor está en ejecución; luego repetí `docker compose up -d --build`.
+- **El puerto ya está en uso**: liberá el puerto indicado antes de iniciar.
+- **Keycloak no responde**: revisá `docker compose ps` y `docker compose logs keycloak`.
+- **No aparece el realm o los usuarios de prueba**: revisá `docker compose logs keycloak`; el realm `inspecciones` se importa al iniciar Keycloak.
 
 ## Probar la app al abrirla sin conexión
 
@@ -31,7 +97,7 @@ El indicador de conexión comprueba el endpoint `/health` del gateway cada 5 seg
 
 ```
 src/api/       cliente HTTP central (problem+json, refresh single-flight), endpoints y tipos
-src/auth/      sesión (localStorage), contexto, guarda de rutas por rol
+src/auth/      sesión OIDC (localStorage), contexto y guarda de rutas por rol
 src/offline/   IndexedDB (idb), cola de actas, sync por lotes y hooks
 src/pages/     login, inspector, supervisor, shared (actas de solo lectura)
 src/components/
@@ -40,9 +106,11 @@ src/components/
 ## Flujo offline del inspector
 
 1. Al guardar, el acta se escribe **siempre primero en IndexedDB** con un UUID del cliente (`pendiente_envio`).
-2. Con conexión (evento `online`, al guardar o botón "Sincronizar ahora") se envía todo en `POST /mobile/sync`, en lotes de 50.
+2. Con conexión (evento `online`, al guardar o botón "Sincronizar ahora") se envía todo en `POST /api/v1/sync`, en lotes de 50.
 3. Por acta: `creada`/`ya_recibida` → `enviada` (solo lectura); `rechazada` → queda visible con el motivo y se puede descartar; 5xx/502/401 → sigue pendiente y se reintenta.
 4. Las enviadas se consultan cada 5 s (`GET /api/actas/{id}`) mientras estén en `pendiente_asociacion`; el polling se pausa si la pestaña está oculta o sin conexión.
+
+En **Mis actas**, el inspector ve las actas locales y las últimas 100 recibidas por el servidor, incluso si se cargaron en otro dispositivo. Se combinan por ID y las del servidor quedan en modo de solo lectura. Al entrar, volver a conectarse o tocar **Actualizar**, se consulta el servidor y se guarda una copia por usuario para verla sin conexión. Las actas pendientes de otro dispositivo no aparecen hasta que ese dispositivo las envíe.
 
 Notas de diseño: el refresh token rotativo se renueva con una sola llamada compartida y un lock entre pestañas (`navigator.locks`); la cola se guarda por usuario; los tokens van en `localStorage` para sobrevivir al cierre de la pestaña (riesgo XSS asumido para el TP).
 

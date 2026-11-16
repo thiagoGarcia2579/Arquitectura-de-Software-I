@@ -63,15 +63,6 @@ services:
     restart: unless-stopped
     networks: [backend]
 
-  # BFF de la app Android del inspector.
-  bff-inspector:
-    build: ./bff-inspector
-    environment:
-      PORT: 3001
-      API_URL: http://api:3000
-    depends_on: [api]
-    networks: [backend]
-
   # Único punto de entrada al backend (http://localhost:8000).
   gateway:
     image: nginx:1.27-alpine
@@ -80,7 +71,7 @@ services:
     ports:
       - "8000:80"
     restart: unless-stopped
-    depends_on: [api, bff-inspector]
+    depends_on: [api]
     networks: [backend]
 
   # Documentación generada desde el contrato. Fuera de la red: quien llama a la API es tu navegador.

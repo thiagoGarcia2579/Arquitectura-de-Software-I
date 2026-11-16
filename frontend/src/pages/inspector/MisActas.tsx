@@ -1,19 +1,29 @@
 import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { BadgeActaLocal } from '../../components/Badges';
-import { Cargando, fecha, Vacio } from '../../components/Estados';
+import { Cargando, ErrorMsg, fecha, Vacio } from '../../components/Estados';
+import { combinarActas } from '../../offline/actas';
 import { descartarActa, type ActaLocal } from '../../offline/db';
-import { useActasLocales } from '../../offline/hooks';
+import { useActasLocales, useActasRemotas, useOnline } from '../../offline/hooks';
 
 export function MisActas() {
   const { usuario } = useAuth();
-  const { actas, cargando } = useActasLocales(usuario!.id);
+  const userId = usuario!.id;
+  const online = useOnline();
+  const locales = useActasLocales(userId);
+  const remotas = useActasRemotas(userId, online);
+  const actas = combinarActas(locales.actas, remotas.actas, userId);
   const [abierta, setAbierta] = useState<string | null>(null);
 
-  if (cargando) return <Cargando />;
+  if (locales.cargando || remotas.cargando) return <Cargando />;
   return (
     <section className="space-y-3">
-      <h1 className="text-lg font-semibold">Mis actas</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold">Mis actas</h1>
+        <button className="btn-secondary" onClick={remotas.actualizar} disabled={!online}>Actualizar</button>
+      </div>
+      {remotas.error && <ErrorMsg onReintentar={online ? remotas.actualizar : undefined}>{remotas.error}</ErrorMsg>}
+      {!online && <p className="text-xs text-slate-500">Sin conexión: se muestran las actas guardadas en este dispositivo.</p>}
       {actas.length === 0 ? <Vacio>Todavía no cargaste ninguna acta.</Vacio> : (
         <ul className="space-y-2">
           {actas.map((a) => (
@@ -22,7 +32,7 @@ export function MisActas() {
                 <span>
                   <span className="block text-sm font-semibold">{a.expediente}</span>
                   <span className="block text-sm text-slate-600">{a.direccion}</span>
-                  <span className="block text-xs text-slate-500">Según el celular: {fecha(a.creadaEnDispositivo)}</span>
+                  <span className="block text-xs text-slate-500">Fecha: {fecha(a.creadaEnDispositivo)}</span>
                 </span>
                 <BadgeActaLocal acta={a} />
               </button>

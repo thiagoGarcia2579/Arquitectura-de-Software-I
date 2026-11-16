@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { misInspeccionesMobile } from '../api/endpoints';
+import { listarActas, listarInspecciones } from '../api/endpoints';
 import { mensajeDeError, NetworkError } from '../api/http';
-import type { InspeccionLiviana } from '../api/types';
-import { actasDeUsuario, cachearInspecciones, inspeccionesCacheadas, suscribir, type ActaLocal } from './db';
+import type { Acta, InspeccionLiviana } from '../api/types';
+import { actasDeUsuario, actasRemotasCacheadas, cachearActasRemotas, cachearInspecciones, inspeccionesCacheadas, suscribir, type ActaLocal } from './db';
 
-const HEALTH_URL = `${(import.meta.env.VITE_GATEWAY_URL || 'http://localhost:8000').replace(/\/+$/, '')}/health`;
+const HEALTH_URL = '/health';
 const HEALTH_CHECK_MS = 5000;
 const HEALTH_TIMEOUT_MS = 3000;
 
@@ -68,7 +68,41 @@ export function useActasLocales(userId: string) {
   return { actas, cargando };
 }
 
-// Online: pide la lista liviana al BFF y la cachea. Sin red o con el backend caído: usa lo cacheado.
+export function useActasRemotas(userId: string, online: boolean) {
+  const [cache, setCache] = useState<{ userId: string; items: Acta[] }>({ userId, items: [] });
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const actualizar = useCallback(() => setRevision((n) => n + 1), []);
+
+  useEffect(() => {
+    let vigente = true;
+    (async () => {
+      setCargando(true);
+      setError(null);
+      try {
+        const guardadas = await actasRemotasCacheadas(userId);
+        if (!vigente) return;
+        setCache({ userId, items: guardadas });
+        if (online) {
+          const items = (await listarActas()).filter((acta) => acta.inspectorId === userId);
+          if (!vigente) return;
+          setCache({ userId, items });
+          await cachearActasRemotas(userId, items);
+        }
+      } catch (e) {
+        if (vigente) setError(`No se pudieron actualizar las actas del servidor: ${mensajeDeError(e)}`);
+      } finally {
+        if (vigente) setCargando(false);
+      }
+    })();
+    return () => { vigente = false; };
+  }, [userId, online, revision]);
+
+  return { actas: cache.userId === userId ? cache.items : [], cargando, error, actualizar };
+}
+
+// Online: guarda solo los campos necesarios. Sin red o con el backend caído: usa lo cacheado.
 export function useInspecciones(userId: string, online: boolean) {
   const [items, setItems] = useState<InspeccionLiviana[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -81,10 +115,11 @@ export function useInspecciones(userId: string, online: boolean) {
       setCargando(true);
       try {
         if (!online) throw new NetworkError();
-        const r = await misInspeccionesMobile();
-        await cachearInspecciones(userId, r.items);
+        const inspecciones = await listarInspecciones();
+        const items = inspecciones.map((i) => ({ id: i.id, expediente: i.expedienteId, direccion: i.direccion }));
+        await cachearInspecciones(userId, items);
         if (!vigente) return;
-        setItems(r.items); setDesdeCache(false); setError(null);
+        setItems(items); setDesdeCache(false); setError(null);
       } catch (e) {
         const cache = await inspeccionesCacheadas(userId);
         if (!vigente) return;

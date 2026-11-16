@@ -24,14 +24,18 @@ export interface ActaLocal {
 interface Esquema extends DBSchema {
   actas: { key: string; value: ActaLocal; indexes: { porUsuario: string } };
   inspecciones: { key: string; value: { userId: string; items: InspeccionLiviana[] } };
+  actasRemotas: { key: string; value: { userId: string; items: Acta[] } };
 }
 
 let dbPromise: Promise<IDBPDatabase<Esquema>> | null = null;
 const db = () =>
-  (dbPromise ??= openDB<Esquema>('inspecciones', 1, {
-    upgrade(d) {
-      d.createObjectStore('actas', { keyPath: 'id' }).createIndex('porUsuario', 'userId');
-      d.createObjectStore('inspecciones', { keyPath: 'userId' });
+  (dbPromise ??= openDB<Esquema>('inspecciones', 2, {
+    upgrade(d, oldVersion) {
+      if (oldVersion < 1) {
+        d.createObjectStore('actas', { keyPath: 'id' }).createIndex('porUsuario', 'userId');
+        d.createObjectStore('inspecciones', { keyPath: 'userId' });
+      }
+      if (oldVersion < 2) d.createObjectStore('actasRemotas', { keyPath: 'userId' });
     },
   }));
 
@@ -69,4 +73,12 @@ export async function cachearInspecciones(userId: string, items: InspeccionLivia
 
 export async function inspeccionesCacheadas(userId: string): Promise<InspeccionLiviana[]> {
   return (await (await db()).get('inspecciones', userId))?.items ?? [];
+}
+
+export async function cachearActasRemotas(userId: string, items: Acta[]): Promise<void> {
+  await (await db()).put('actasRemotas', { userId, items });
+}
+
+export async function actasRemotasCacheadas(userId: string): Promise<Acta[]> {
+  return (await (await db()).get('actasRemotas', userId))?.items ?? [];
 }
