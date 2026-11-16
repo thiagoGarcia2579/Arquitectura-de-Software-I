@@ -13,7 +13,7 @@ export interface Usuario {
   nombre: string;
 }
 
-// GET /api/inspecciones (supervisor / inspector)
+// GET /api/v1/inspecciones (supervisor / inspector)
 export interface Inspeccion {
   id: string;
   expedienteId: string;

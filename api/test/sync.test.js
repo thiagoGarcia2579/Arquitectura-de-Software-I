@@ -20,8 +20,16 @@ async function pedir(path, { token = inspector, method = 'GET', body } = {}) {
   const response = await fetch(`${base}${path}`, {
     method, headers, ...(body !== undefined && { body: JSON.stringify(body) }),
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, location: response.headers.get('location'), body: await response.json() };
 }
+
+test('la versión pública de la API se aplica a las rutas y al encabezado Location', async () => {
+  const acta = crear();
+  const creada = await pedir(`/api/v1/actas/${acta.id}`, { method: 'PUT', body: acta });
+  assert.equal(creada.status, 201);
+  assert.equal(creada.location, `/api/v1/actas/${acta.id}`);
+  assert.equal((await pedir('/api/inspecciones')).status, 404);
+});
 
 test('el lote respeta autenticación, roles y límites', async () => {
   const actas = [crear()];
@@ -43,7 +51,7 @@ test('el lote procesa actas independientes y los reintentos son idempotentes', a
   ]);
   const repetido = await pedir('/api/v1/sync', { method: 'POST', body: { actas: [primera] } });
   assert.equal(repetido.body.resultados[0].estado, 'ya_recibida');
-  const individual = await pedir(`/api/actas/${primera.id}`, { method: 'PUT', body: primera });
+  const individual = await pedir(`/api/v1/actas/${primera.id}`, { method: 'PUT', body: primera });
   assert.equal(individual.status, 200);
   assert.equal(individual.body.id, primera.id);
   assert.equal(individual.body.expedienteId, 'EXP-2025-0001');
@@ -59,14 +67,14 @@ test('acepta 50 actas válidas con observaciones largas', async () => {
 });
 
 test('la lista normal solo devuelve las inspecciones asignadas al inspector', async () => {
-  const resultado = await pedir('/api/inspecciones');
+  const resultado = await pedir('/api/v1/inspecciones');
   assert.equal(resultado.status, 200);
   assert.ok(resultado.body.some((i) => i.id === propia));
   assert.ok(resultado.body.every((i) => i.inspectorId === '11111111-1111-1111-1111-111111111111'));
 });
 
 test('la lista de actas incluye el expediente y la dirección para otros dispositivos', async () => {
-  const resultado = await pedir('/api/actas');
+  const resultado = await pedir('/api/v1/actas');
   assert.equal(resultado.status, 200);
   assert.ok(resultado.body.some((a) => a.expedienteId === 'EXP-2025-0001' && a.direccion === 'Ruta 7 km 52, lote 14'));
 });

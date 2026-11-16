@@ -24,12 +24,11 @@ export function useOnline(): boolean {
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
       try {
-        await fetch(HEALTH_URL, {
-          mode: 'no-cors',
+        const respuesta = await fetch(HEALTH_URL, {
           cache: 'no-store',
           signal: controller.signal,
         });
-        if (vigente) setOnline(navigator.onLine);
+        if (vigente) setOnline(navigator.onLine && respuesta.ok);
       } catch {
         if (vigente) setOnline(false);
       } finally {

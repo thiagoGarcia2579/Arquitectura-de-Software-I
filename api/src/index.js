@@ -27,7 +27,7 @@ const pool = new pg.Pool({
 });
 
 const app = express();
-app.use('/v1/sync', express.json({ limit: '1mb' }));
+app.use('/sync', express.json({ limit: '1mb' }));
 app.use(express.json({ limit: '256kb' }));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -83,7 +83,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Inspector: solo las suyas. Supervisor: todas. Administrativo: 403 (matriz de permisos).
-app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor','administrativo'), async (req, res) => {
+app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor', 'administrativo'), async (req, res) => {
   const propias = req.usuario.rol === 'inspector';
   const { rows } = await pool.query(
     `SELECT * FROM inspecciones ${propias ? 'WHERE inspector_id = $1' : ''} ORDER BY creada_en, id`,
@@ -183,11 +183,11 @@ app.put('/actas/:id', autenticar, permitir('inspector'), async (req, res) => {
   if (resultado.status >= 400) {
     return problem(res, resultado.status, resultado.title, resultado.detail, req.originalUrl);
   }
-  if (resultado.status === 201) res.location(`/actas/${req.params.id}`);
+  if (resultado.status === 201) res.location(`/api/v1/actas/${req.params.id}`);
   return res.status(resultado.status).json(resultado.acta);
 });
 
-app.post('/v1/sync', autenticar, permitir('inspector'), async (req, res) => {
+app.post('/sync', autenticar, permitir('inspector'), async (req, res) => {
   const actas = req.body?.actas;
   if (!Array.isArray(actas) || actas.length === 0 || actas.length > 50) {
     return problem(res, 400, 'Datos inválidos', 'Se requiere "actas": lista de 1 a 50 elementos.', req.originalUrl);

@@ -36,7 +36,7 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* El administrativo solo consulta: nunca llama a /api/inspecciones (devuelve 403). */}
+      {/* El administrativo solo consulta actas. */}
       <Route element={<RequireRole rol="administrativo" />}>
         <Route element={<Layout />}>
           <Route path="/admin" element={<ActasPage />} />
