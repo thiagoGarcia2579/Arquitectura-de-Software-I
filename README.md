@@ -56,19 +56,54 @@ Si ya tenías una versión anterior con `bff-inspector`, reconstruí los servici
 
 Para apagar: `docker compose down` (conserva los datos) o `docker compose down -v` (borra todo y vuelve a cargar los datos de ejemplo).
 
-## Correr la interfaz web
+## Usar la app solo en la PC
 
-Primero levantá el backend con los pasos anteriores. Luego, desde la raíz del repo, instalá las dependencias e iniciá el servidor de desarrollo:
+1. Levantá el backend con los pasos de **Levantarlo**.
+2. Abrí otra terminal desde la raíz del repositorio y ejecutá:
 
-```bash
-cd frontend;
-npm ci;
-npm run dev
-```
+   ```powershell
+   cd frontend
+   npm ci
+   npm run dev
+   ```
 
-Abrí **http://localhost:5173**. Al iniciar sesión, la app redirige a Keycloak en el puerto `8180` y vuelve a la interfaz. Vite reenvía las llamadas a la API por `/api` hacia `http://localhost:8000`. Para detener la interfaz, presioná `Ctrl+C` en esa terminal; para detener el backend, ejecutá `docker compose down` desde la raíz del repo.
+   `npm ci` solo hace falta la primera vez o cuando cambian las dependencias. Dejá la terminal abierta mientras uses la app.
+3. Abrí **http://localhost:5173** e iniciá sesión. Para usarla solo en la PC no necesitás ADB ni conectar un celular.
 
-Para probar la PWA en un celular Android conectado por USB, seguí la [guía de ADB](frontend/README.md#probar-en-android-por-usb-windows).
+## Usar la app en un celular Android por USB (Windows)
+
+Esto permite probar la PWA en el celular; no instala una app Android nativa.
+
+1. Levantá el backend con los pasos de **Levantarlo**. Desde la raíz del repositorio, abrí otra terminal y ejecutá:
+
+   ```powershell
+   cd frontend
+   npm ci
+   .\node_modules\.bin\vite.cmd --host 127.0.0.1
+   ```
+
+   `npm ci` solo hace falta la primera vez o cuando cambian las dependencias. Si Vite ya estaba ejecutándose, detenelo primero con `Ctrl+C`. Dejá la terminal abierta y comprobá que use el puerto **5173**.
+2. La primera vez, descargá [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) para Windows y extraé el ZIP. En el celular, activá **Opciones para desarrolladores → Depuración USB**.
+3. Conectá el celular con un cable que permita transferir datos. En el Explorador de Windows, abrí la carpeta `platform-tools`, escribí `powershell` en la barra de direcciones y presioná Enter. Ejecutá:
+
+   ```powershell
+   .\adb.exe devices
+   ```
+
+   Desbloqueá el celular y aceptá el aviso de autorización de depuración USB. Volvé a ejecutar el comando: el dispositivo debe aparecer con el estado `device`.
+4. En esa misma terminal, configurá los túneles hacia Vite y Keycloak:
+
+   ```powershell
+   .\adb.exe reverse tcp:5173 tcp:5173
+   .\adb.exe reverse tcp:8180 tcp:8180
+   .\adb.exe reverse --list
+   ```
+
+5. Con el cable conectado y los servicios corriendo, abrí **http://localhost:5173** en Chrome del celular e iniciá sesión. Desde el menú de Chrome podés agregar la PWA a la pantalla de inicio.
+
+Después de desconectar el celular, comprobá los túneles con `.\adb.exe reverse --list` y volvé a ejecutar los dos comandos `reverse` si faltan. Para probar sin conexión, primero iniciá sesión y cargá las inspecciones con conexión; las actas pendientes se enviarán cuando vuelva la conexión.
+
+Para detener la interfaz, presioná `Ctrl+C` en su terminal; para detener el backend sin borrar los datos, ejecutá `docker compose down` desde la raíz del repositorio.
 
 ---
 

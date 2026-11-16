@@ -43,36 +43,7 @@ Para apagar los servicios: `docker compose down` desde la raíz. Esto conserva l
 
 ## Probar en Android por USB (Windows)
 
-Esto permite probar la PWA existente en el celular; no genera una app Android nativa.
-
-1. Levantá el backend con Docker como se indica arriba. En una terminal de la carpeta `frontend`, instalá las dependencias con `npm ci` si todavía no lo hiciste y ejecutá:
-
-   ```powershell
-   .\node_modules\.bin\vite.cmd --host 127.0.0.1
-   ```
-
-   Si Vite ya estaba ejecutándose, detenelo primero con `Ctrl+C`. Dejá esta terminal abierta y comprobá que use el puerto **5173**. En la computadora, para iniciar sesión, seguí usando http://localhost:5173.
-
-2. Descargá [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) para Windows y extraé el ZIP. En el celular, activá **Opciones para desarrolladores → Depuración USB** y conectalo con un cable que permita transferir datos.
-3. En el Explorador de Windows, abrí la carpeta `platform-tools`, escribí `powershell` en la barra de direcciones y presioná Enter. Ejecutá:
-
-   ```powershell
-   .\adb.exe devices
-   ```
-
-   Desbloqueá el celular y aceptá el aviso de autorización de depuración USB. Volvé a ejecutar el comando: el dispositivo debe aparecer con el estado `device`.
-
-4. En esa misma terminal, configurá los túneles hacia Vite y Keycloak:
-
-   ```powershell
-   .\adb.exe reverse tcp:5173 tcp:5173
-   .\adb.exe reverse tcp:8180 tcp:8180
-   .\adb.exe reverse --list
-   ```
-
-5. Con el cable conectado y los servicios corriendo, abrí **http://localhost:5173** en Chrome del celular e iniciá sesión. Podés agregar la PWA a la pantalla de inicio desde el menú de Chrome.
-
-Si el celular se desconecta o aparece un error al contactar al proveedor de identidad, comprobá `devices` y `reverse --list` y volvé a ejecutar los dos comandos `reverse` si faltan los túneles. Si la página no carga, verificá que Vite siga ejecutándose en el puerto 5173.
+Seguí los [pasos para usar la app en Android por USB](../README.md#usar-la-app-en-un-celular-android-por-usb-windows) del README principal.
 
 ## Problemas al iniciar
 

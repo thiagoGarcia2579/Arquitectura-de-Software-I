@@ -69,7 +69,7 @@ export function ActasPage() {
               <Fila k="Inspección" v={detalle.inspeccionId} />
               <Fila k="Inspector" v={detalle.inspectorId} />
               <Fila k="Fotos" v={String(detalle.cantidadFotos)} />
-              <Fila k="Creada (según el celular)" v={fecha(detalle.creadaEnDispositivo)} />
+              <Fila k="Creada" v={fecha(detalle.creadaEnDispositivo)} />
               <Fila k="Recibida" v={fecha(detalle.recibidaEn)} />
               <Fila k="Asociada" v={fecha(detalle.asociadaEn)} />
               {detalle.detalleAsociacion && <Fila k="Detalle de asociación" v={detalle.detalleAsociacion} />}
