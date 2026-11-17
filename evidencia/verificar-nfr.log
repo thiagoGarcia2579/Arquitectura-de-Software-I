@@ -1,0 +1,69 @@
+Verificación de NFRs · 2026-11-16 22:25:34 · commit 1320940
+BASE=http://localhost:8000 · SYNC_PATH=/api/v1/sync
+
+== Preparación
+  [OK]     Gateway responde en /health (esperado 200)
+
+== RNF-06 · Login de cada rol con Keycloak (OIDC)
+  [OK]     inspector1 entra con rol (esperado inspector)
+  [OK]     inspector2 entra con rol (esperado inspector)
+  [OK]     supervisor1 entra con rol (esperado supervisor)
+  [OK]     admin1 entra con rol (esperado administrativo)
+
+== RNF-02 · Matriz de permisos (un caso por celda relevante)
+  [OK]     inspector1 carga acta sobre su inspección (esperado 201)
+  [OK]     sin token → GET /api/v1/actas (esperado 401)
+  [OK]     token con firma alterada → GET /api/v1/actas (esperado 401)
+  [OK]     inspector1 carga acta sobre inspección ajena (esperado 403)
+  [OK]     inspector1 carga acta sobre inspección inexistente (esperado 404)
+  [OK]     inspector1 reasigna una inspección (solo supervisor) (esperado 403)
+  [OK]     supervisor1 intenta cargar un acta (esperado 403)
+  [OK]     admin1 intenta cargar un acta (esperado 403)
+  [OK]     admin1 lista inspecciones (esperado 200)
+  [OK]     admin1 lista actas (esperado 200)
+  [OK]     supervisor1 lista actas (todas) (esperado 200)
+  [OK]     inspector2 lee un acta de inspector1 (no se revela) (esperado 404)
+  [OK]     inspector1 lee su propia acta (esperado 200)
+  [OK]     id de acta que no es UUID (esperado 400)
+  [OK]     ruta sin versión (gateway) → GET /api/actas (esperado 404)
+  [OK]     Los errores salen como application/problem+json
+
+== RNF-05 · Límites del contrato (fotos y tamaños)
+  [OK]     cantidadFotos = 21 (esperado 400)
+  [OK]     cantidadFotos = -1 (esperado 400)
+  [OK]     cantidadFotos = 20 (máximo permitido) (esperado 201)
+  [OK]     cuerpo de 300 KB (límite 256 KB) (esperado 413)
+  [OK]     lote de 51 actas (máximo 50) (esperado 400)
+  (Compresión de fotos, almacenamiento local y subida reanudable son diseño: no verificables en el corte.)
+
+== RNF-01 · Sincronización de lo acumulado sin conexión (lote de 8 + 1 ajena)
+  [OK]     Primer envío: actas creadas (esperado 8)
+  [OK]     Primer envío: acta ajena rechazada (esperado 1)
+  [OK]     Reenvío del mismo lote: ya_recibida (esperado 8)
+  [OK]     Reenvío del mismo lote: ajena rechazada (esperado 1)
+  [OK]     Filas en la base para las 8 actas (esperado 8)
+  [OK]     Pendientes (outbox) para esas 8 actas (esperado 8)
+  [OK]     El acta ajena no quedó guardada (esperado 0)
+  (Prueba manual: docker compose stop gateway; abrir/recargar la web en :5173, cargar actas; docker compose start gateway.)
+
+== RNF-03 · Integridad: 50 envíos concurrentes del mismo id y reinicio
+  [OK]     Respuestas 201 (esperado 1)
+  [OK]     Respuestas 200 (reintento idempotente) (esperado 49)
+  [OK]     Filas en actas (esperado 1)
+  [OK]     Pendientes en outbox (esperado 1)
+  Reiniciando api y sync...
+  [OK]     Tras el reinicio el acta sigue en la base (esperado 1)
+  [OK]     Tras el reinicio se sigue asociando (esperado asociada)
+
+== RNF-04 · Resiliencia ante el sistema de expedientes
+  [OK]     Con el legacy caído la API sigue aceptando actas (esperado 201)
+  [OK]     El acta queda pendiente de asociación (esperado pendiente_asociacion)
+  [OK]     Al volver el legacy se asocia sola (sin intervención) (esperado asociada)
+  [OK]     Acta sobre expediente inexistente se acepta (esperado 201)
+  [OK]     Termina en error_asociacion (esperado error_asociacion)
+  [OK]     Sin reintentos infinitos (1 intento: error definitivo) (esperado 1)
+
+== Resumen
+OK: 45 · FALLAS: 0
+Pendiente a mano: (1) la web abre y carga actas sin señal; (2) RNF-06: alta de un inspector en Keycloak y asignación con PATCH.
+Siguiente: RNF-07 con k6 (scripts/carga.js) y scripts/medir-outbox.sh; arranque en limpio con scripts/medir-arranque.sh.

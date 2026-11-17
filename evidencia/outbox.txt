@@ -1,0 +1,35 @@
+Medición del outbox · 2026-11-17 00:06:10
+[1s] pendientes: 385
+[11s] pendientes: 372
+[22s] pendientes: 359
+[32s] pendientes: 346
+[43s] pendientes: 333
+[53s] pendientes: 320
+[64s] pendientes: 307
+[74s] pendientes: 294
+[85s] pendientes: 282
+[95s] pendientes: 269
+[106s] pendientes: 256
+[116s] pendientes: 243
+[127s] pendientes: 230
+[137s] pendientes: 217
+[148s] pendientes: 204
+[158s] pendientes: 192
+[168s] pendientes: 179
+[179s] pendientes: 166
+[189s] pendientes: 153
+[200s] pendientes: 140
+[210s] pendientes: 127
+[222s] pendientes: 112
+[233s] pendientes: 99
+[243s] pendientes: 86
+[254s] pendientes: 73
+[265s] pendientes: 60
+[275s] pendientes: 47
+[286s] pendientes: 34
+[296s] pendientes: 22
+[307s] pendientes: 8
+[317s] pendientes: 0
+Outbox vacío a los 317 s (objetivo: menos de 900 s).
+Actas por estado:
+asociada: 600

@@ -1,4 +1,4 @@
-# TP Arquitectura de Software 1 — Dominio 2 · Inspecciones de obra municipales
+# TP Arquitectura de Software 1 — Dominio 2B · Inspecciones de obra municipales
 
 ## Integrantes
 - Thiago Garcia
@@ -6,9 +6,13 @@
 - Valentin Varela
 - Aldana Gomez
 
+[Informe de Arquitectura](https://www.ejemplo.com)
+
+[Presentacion](https://www.ejemplo.com)
+
 **Escenario 2B · Municipio extenso** (120 inspectores, zonas sin señal, NFR estrella: funcionamiento sin conexión).
 
-Este repo implementa **el corte**: *login* + el caso de uso mínimo **"un inspector completa un acta y queda asociada al expediente"**. Docker Compose levanta el backend y la interfaz web.
+Este repo implementa  *login* + el caso de uso mínimo **"un inspector completa un acta y queda asociada al expediente"**. Docker Compose levanta el backend y la interfaz web.
 
 ---
 
