@@ -6,9 +6,9 @@
 - Valentin Varela
 - Aldana Gomez
 
-[Informe de Arquitectura](https://www.ejemplo.com)
+[Informe de Arquitectura](https://docs.google.com/document/d/1CvTt-X90DKGGSAZpIrN9Bs9hy3g-LwBgCctXp4BYaGA/edit?usp=sharing)
 
-[Presentacion](https://www.ejemplo.com)
+[Presentacion](https://canva.link/0n7gxuiwo6t6ex5)
 
 **Escenario 2B · Municipio extenso** (120 inspectores, zonas sin señal, NFR estrella: funcionamiento sin conexión).
 
