@@ -6,15 +6,28 @@ info:
     Inspecciones de obra municipales (Dominio 2B · municipio extenso).
     Todo entra por el gateway (`http://localhost:8000`).
 
-    **Cómo probar en Swagger UI:** Tocá Authorize, dejá vacío el client_secret y logueate con un usuario de prueba (inspector1, supervisor1, admin1). Para cerrar sesion, ingresa a la siguiente pagina http://localhost:8180/realms/inspecciones/protocol/openid-connect/logout .
+    **Cómo probar en Swagger UI:** Tocá Authorize, dejá vacío el client_secret y logueate con un usuario de prueba (inspector1, supervisor1, admin1). Para cerrar sesión, ingresa a la siguiente página http://localhost:8180/realms/inspecciones/protocol/openid-connect/logout .
     
-    **Versionado.** La versión mayor va en la URL: `/api/v1`.
+    **Roles y permisos.** Sin token válido, todas las operaciones responden 401.
+
+    | Operación | Inspector | Supervisor | Administrativo |
+    |---|---|---|---|
+    | `GET /inspecciones` | solo las suyas | todas | todas |
+    | `PATCH /inspecciones/{id}/asignacion` | no (403) | sí | no (403) |
+    | `GET /actas` | solo las suyas | todas | todas |
+    | `GET /actas/{id}` | solo la suya (ajena: 404) | sí | sí |
+    | `PUT /actas/{id}` | sí, sobre sus inspecciones (ajena: 403) | no (403) | no (403) |
+    | `POST /sync` | sí (misma regla, por acta) | no (403) | no (403) |
+
+    **Versionado.** La versión mayor va en la URL: `/api/v1`. Los cambios compatibles (por ejemplo, un
+    campo opcional nuevo) no cambian la versión. Un cambio incompatible crea `/v2` y `/v1` convive un
+    tiempo con aviso de baja (headers `Deprecation` y `Sunset`), porque los celulares no se actualizan
+    todos a la vez. Una ruta sin versión devuelve 404.
 
 servers:
   - url: http://localhost:8000
     description: Gateway (vista desde tu navegador)
 tags:
-  - name: Auth
   - name: Inspecciones
   - name: Actas
   - name: Sincronización
@@ -23,7 +36,8 @@ paths:
   /api/v1/inspecciones:
     get:
       tags: [Inspecciones]
-      summary: Listar inspecciones (inspector ve solo las suyas; supervisor y administrativo, todas)
+      summary: Listar inspecciones
+      description: "**Roles:** inspector (solo las suyas), supervisor y administrativo (todas)."
       operationId: listarInspecciones
       security: [{ keycloak: [openid] }]
       responses:
@@ -36,10 +50,12 @@ paths:
                 items: { $ref: '#/components/schemas/Inspeccion' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
+
   /api/v1/inspecciones/{id}/asignacion:
     patch:
       tags: [Inspecciones]
-      summary: Asignar o reasignar una inspección (solo supervisor)
+      summary: Asignar o reasignar una inspección
+      description: "**Rol requerido:** supervisor."
       operationId: asignarInspeccion
       security: [{ keycloak: [openid] }]
       parameters:
@@ -68,10 +84,12 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+
   /api/v1/actas:
     get:
       tags: [Actas]
-      summary: Listar actas (inspector ve solo las suyas)
+      summary: Listar actas
+      description: "**Roles:** inspector (solo las suyas), supervisor y administrativo (todas)."
       operationId: listarActas
       security: [{ keycloak: [openid] }]
       responses:
@@ -84,6 +102,7 @@ paths:
                 items: { $ref: '#/components/schemas/Acta' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
+
   /api/v1/actas/{id}:
     parameters:
       - name: id
@@ -96,6 +115,8 @@ paths:
       tags: [Actas]
       summary: Cargar un acta cerrada (idempotente)
       description: |
+        **Rol requerido:** inspector (sobre sus propias inspecciones).
+        
         El id lo genera el celular, así que un reintento tras un corte de señal **no duplica** el acta:
         responde `200` con el acta ya existente. El acta cerrada no se modifica.
         Solo el inspector al que está asignada la inspección puede cargarla (regla fina).
@@ -136,9 +157,15 @@ paths:
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/ProblemDetails' }
+        '413':
+          description: El cuerpo supera 256 KB
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/ProblemDetails' }
     get:
       tags: [Actas]
       summary: Consultar un acta y el estado de su asociación al expediente
+      description: "**Roles:** inspector (solo la suya; una ajena responde 404), supervisor y administrativo."
       operationId: obtenerActa
       security: [{ keycloak: [openid] }]
       responses:
@@ -151,12 +178,15 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
+
   /api/v1/sync:
     post:
       tags: [Sincronización]
       summary: Sincronizar en un solo pedido las actas acumuladas sin conexión
-      description: Solo inspectores. Hasta 50 actas por pedido; cada una devuelve su propio resultado.
-      operationId: mobileSync
+      description: |
+        **Rol requerido:** inspector.
+        Hasta 50 actas por pedido; cada una devuelve su propio resultado.
+      operationId: sincronizarActas
       security: [{ keycloak: [openid] }]
       requestBody:
         required: true
@@ -208,6 +238,7 @@ paths:
         '403': { $ref: '#/components/responses/Prohibido' }
         '413':
           description: El cuerpo supera 1 MB
+
 components:
   securitySchemes:
     keycloak:

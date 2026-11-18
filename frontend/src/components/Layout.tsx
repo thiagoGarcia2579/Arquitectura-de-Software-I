@@ -22,7 +22,10 @@ const NAV: Record<string, { to: string; texto: string; end?: boolean }[]> = {
     { to: '/supervisor', texto: 'Inspecciones', end: true },
     { to: '/supervisor/actas', texto: 'Actas' },
   ],
-  administrativo: [{ to: '/admin', texto: 'Actas', end: true }],
+  administrativo: [
+    { to: '/admin', texto: 'Actas', end: true },
+    { to: '/admin/inspecciones', texto: 'Inspecciones' },
+  ],
 };
 
 export function Layout() {

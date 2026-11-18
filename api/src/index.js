@@ -37,6 +37,23 @@ function problem(res, status, title, detail, instance) {
   return res.status(status).type('application/problem+json').json({ type: 'about:blank', title, status, detail, instance });
 }
 
+// Copia local de la identidad (la fuente de verdad es Keycloak). Hace falta porque
+// inspecciones.inspector_id y actas.inspector_id tienen clave foránea a usuarios(id).
+const registrados = new Set();   // evita escribir en la base en cada pedido
+async function registrarUsuario(u, username) {
+  const clave = `${u.id}:${u.rol}`;   // si cambia el rol en Keycloak, se vuelve a registrar
+  if (registrados.has(clave)) return;
+  try {
+    await pool.query(
+      `INSERT INTO usuarios (id, username, nombre, rol) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre, rol = EXCLUDED.rol`,
+      [u.id, username, u.nombre, u.rol]);
+    registrados.add(clave);
+  } catch (err) {
+    console.error('No se pudo registrar al usuario', u.id, err.message);   // no bloquea el pedido
+  }
+}
+
 // ---- Autenticación y roles -------------------------------------------------
 async function autenticar(req, res, next) {
   const [esquema, token] = (req.get('Authorization') ?? '').split(' ');
@@ -54,7 +71,8 @@ async function autenticar(req, res, next) {
   }
   const rol = (p.realm_access?.roles ?? []).find((r) => ROLES.includes(r));
   if (!rol) return problem(res, 403, 'Prohibido', 'El usuario no tiene un rol del sistema.', req.originalUrl);
-  req.usuario = { id: p.sub, rol, nombre: p.name ?? p.preferred_username };
+  req.usuario = { id: p.sub, rol, nombre: p.name ?? p.preferred_username ?? p.sub };
+  await registrarUsuario(req.usuario, p.preferred_username ?? p.sub);
   next();
 }
 
@@ -66,7 +84,7 @@ const permitir = (...roles) => (req, res, next) =>
 // ---- Mapeos ---------------------------------------------------------------
 const aInspeccion = (r) => ({
   id: r.id, expedienteId: r.expediente_id, direccion: r.direccion,
-  inspectorId: r.inspector_id, creadaEn: r.creada_en,
+  inspectorId: r.inspector_id, inspectorNombre: r.inspector_nombre ?? null, creadaEn: r.creada_en,
 });
 const aActa = (r) => ({
   id: r.id, inspeccionId: r.inspeccion_id, inspectorId: r.inspector_id, expedienteId: r.expediente_id,
@@ -82,11 +100,14 @@ app.get('/health', async (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Inspector: solo las suyas. Supervisor: todas. Administrativo: 403 (matriz de permisos).
+// Inspector: solo las suyas. Supervisor y administrativo: todas.
 app.get('/inspecciones', autenticar, permitir('inspector', 'supervisor', 'administrativo'), async (req, res) => {
   const propias = req.usuario.rol === 'inspector';
   const { rows } = await pool.query(
-    `SELECT * FROM inspecciones ${propias ? 'WHERE inspector_id = $1' : ''} ORDER BY creada_en, id`,
+    `SELECT i.*, u.nombre AS inspector_nombre
+       FROM inspecciones i LEFT JOIN usuarios u ON u.id = i.inspector_id
+      ${propias ? 'WHERE i.inspector_id = $1' : ''}
+      ORDER BY i.creada_en, i.id`,
     propias ? [req.usuario.id] : [],
   );
   res.json(rows.map(aInspeccion));

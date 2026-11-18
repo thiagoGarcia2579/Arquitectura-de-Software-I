@@ -19,6 +19,7 @@ export interface Inspeccion {
   expedienteId: string;
   direccion: string;
   inspectorId: string | null;
+  inspectorNombre?: string | null;
   creadaEn: string;
 }
 

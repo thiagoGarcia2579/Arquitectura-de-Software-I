@@ -10,6 +10,7 @@ import { NuevaActa } from './pages/inspector/NuevaActa';
 import { ActasPage } from './pages/shared/ActasPage';
 import { SupervisorInspecciones } from './pages/supervisor/SupervisorInspecciones';
 import { CallbackPage } from './pages/login/CallbackPage';
+import { AdminInspecciones } from './pages/administrativo/administrativoInspecciones';
 
 
 export default function App() {
@@ -36,10 +37,11 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* El administrativo solo consulta actas. */}
+      {/* El administrativo solo consulta: ve actas e inspecciones, nunca las modifica. */}
       <Route element={<RequireRole rol="administrativo" />}>
         <Route element={<Layout />}>
           <Route path="/admin" element={<ActasPage />} />
+          <Route path="/admin/inspecciones" element={<AdminInspecciones />} />
         </Route>
       </Route>
 
