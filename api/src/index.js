@@ -33,8 +33,10 @@ app.use(express.json({ limit: '256kb' }));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Errores con Problem Details (RFC 9457)
+const PREFIJO_PUBLICO = '/api/v1';   // el gateway quita este prefijo antes de llegar a la API
 function problem(res, status, title, detail, instance) {
-  return res.status(status).type('application/problem+json').json({ type: 'about:blank', title, status, detail, instance });
+  return res.status(status).type('application/problem+json')
+    .json({ type: 'about:blank', title, status, detail, instance: PREFIJO_PUBLICO + instance });
 }
 
 // Copia local de la identidad (la fuente de verdad es Keycloak). Hace falta porque

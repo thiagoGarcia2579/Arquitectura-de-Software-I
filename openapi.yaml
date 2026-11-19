@@ -8,17 +8,6 @@ info:
 
     **Cómo probar en Swagger UI:** Tocá Authorize, dejá vacío el client_secret y logueate con un usuario de prueba (inspector1, supervisor1, admin1). Para cerrar sesión, ingresa a la siguiente página http://localhost:8180/realms/inspecciones/protocol/openid-connect/logout .
     
-    **Roles y permisos.** Sin token válido, todas las operaciones responden 401.
-
-    | Operación | Inspector | Supervisor | Administrativo |
-    |---|---|---|---|
-    | `GET /inspecciones` | solo las suyas | todas | todas |
-    | `PATCH /inspecciones/{id}/asignacion` | no (403) | sí | no (403) |
-    | `GET /actas` | solo las suyas | todas | todas |
-    | `GET /actas/{id}` | solo la suya (ajena: 404) | sí | sí |
-    | `PUT /actas/{id}` | sí, sobre sus inspecciones (ajena: 403) | no (403) | no (403) |
-    | `POST /sync` | sí (misma regla, por acta) | no (403) | no (403) |
-
     **Versionado.** La versión mayor va en la URL: `/api/v1`. Los cambios compatibles (por ejemplo, un
     campo opcional nuevo) no cambian la versión. Un cambio incompatible crea `/v2` y `/v1` convive un
     tiempo con aviso de baja (headers `Deprecation` y `Sunset`), porque los celulares no se actualizan
@@ -152,16 +141,8 @@ paths:
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
         '404': { $ref: '#/components/responses/NoEncontrado' }
-        '409':
-          description: Ya existe un acta con ese id de otro inspector
-          content:
-            application/problem+json:
-              schema: { $ref: '#/components/schemas/ProblemDetails' }
-        '413':
-          description: El cuerpo supera 256 KB
-          content:
-            application/problem+json:
-              schema: { $ref: '#/components/schemas/ProblemDetails' }
+        '409': { $ref: '#/components/responses/Conflicto' }
+        '413': { $ref: '#/components/responses/CuerpoGrande' }
     get:
       tags: [Actas]
       summary: Consultar un acta y el estado de su asociación al expediente
@@ -236,8 +217,7 @@ paths:
         '400': { $ref: '#/components/responses/Invalido' }
         '401': { $ref: '#/components/responses/NoAutenticado' }
         '403': { $ref: '#/components/responses/Prohibido' }
-        '413':
-          description: El cuerpo supera 1 MB
+        '413': { $ref: '#/components/responses/CuerpoGrande' }
 
 components:
   securitySchemes:
@@ -261,7 +241,15 @@ components:
         expedienteId: { type: string, example: EXP-2025-0001 }
         direccion: { type: string }
         inspectorId: { type: string, format: uuid, nullable: true }
+        inspectorNombre: { type: string, nullable: true }
         creadaEn: { type: string, format: date-time }
+      example:
+        id: aaaaaaaa-0000-0000-0000-000000000001
+        expedienteId: EXP-2025-0001
+        direccion: Ruta 7 km 52, lote 14
+        inspectorId: 11111111-1111-1111-1111-111111111111
+        inspectorNombre: Ana Inspectora
+        creadaEn: '2026-11-18T12:00:00Z'
     ActaNueva:
       type: object
       required: [inspeccionId]
@@ -280,7 +268,7 @@ components:
         id: { type: string, format: uuid }
         inspeccionId: { type: string, format: uuid }
         inspectorId: { type: string, format: uuid }
-        expedienteId: { type: string, example: EXP-2025-0001 } 
+        expedienteId: { type: string, example: EXP-2025-0001 }
         direccion: { type: string }
         observaciones: { type: string }
         cantidadFotos: { type: integer }
@@ -289,33 +277,106 @@ components:
         recibidaEn: { type: string, format: date-time }
         asociadaEn: { type: string, format: date-time, nullable: true }
         detalleAsociacion: { type: string, nullable: true }
+      example:
+        id: bbbbbbbb-0000-0000-0000-000000000001
+        inspeccionId: aaaaaaaa-0000-0000-0000-000000000001
+        inspectorId: 11111111-1111-1111-1111-111111111111
+        expedienteId: EXP-2025-0001
+        direccion: Ruta 7 km 52, lote 14
+        observaciones: Obra sin cartel reglamentario. Medianera según plano.
+        cantidadFotos: 6
+        estado: asociada
+        creadaEnDispositivo: '2026-11-18T14:32:00-03:00'
+        recibidaEn: '2026-11-18T17:35:10Z'
+        asociadaEn: '2026-11-18T17:35:14Z'
+        detalleAsociacion: OK
     ProblemDetails:
-      description: Formato de error estándar (RFC 9457)
+      description: Formato de error estándar (RFC 9457, tipo de contenido application/problem+json)
       type: object
       properties:
-        type: { type: string, example: about:blank }
-        title: { type: string }
-        status: { type: integer }
-        detail: { type: string }
-        instance: { type: string }
+        type:
+          type: string
+          example: about:blank
+          description: 'Tipo de problema. "about:blank" significa que alcanza con el código HTTP.'
+        title:
+          type: string
+          description: Resumen corto del error.
+        status:
+          type: integer
+          description: Código HTTP, repetido dentro del cuerpo.
+        detail:
+          type: string
+          description: Explicación de este caso concreto.
+        instance:
+          type: string
+          description: Ruta del pedido que originó el error.
   responses:
     Invalido:
       description: Datos de entrada inválidos
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: about:blank
+            title: Datos inválidos
+            status: 400
+            detail: 'El id del acta y "inspeccionId" deben ser UUID válidos.'
+            instance: /api/v1/actas/abc
     NoAutenticado:
       description: Falta el token, es inválido o está vencido
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: Bearer }
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: about:blank
+            title: Token inválido
+            status: 401
+            detail: El token es inválido o está vencido.
+            instance: /api/v1/actas
     Prohibido:
       description: El rol o la asignación no permiten la operación
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: about:blank
+            title: Prohibido
+            status: 403
+            detail: 'El rol "administrativo" no puede realizar esta operación.'
+            instance: /api/v1/actas/bbbbbbbb-0000-0000-0000-000000000001
     NoEncontrado:
       description: El recurso no existe
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: about:blank
+            title: Acta no encontrada
+            status: 404
+            detail: No existe el acta bbbbbbbb-0000-0000-0000-000000000001.
+            instance: /api/v1/actas/bbbbbbbb-0000-0000-0000-000000000001
+    Conflicto:
+      description: Ya existe un acta con ese id, cargada por otro inspector
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: about:blank
+            title: Conflicto
+            status: 409
+            detail: Ya existe un acta con ese id.
+            instance: /api/v1/actas/bbbbbbbb-0000-0000-0000-000000000001
+    CuerpoGrande:
+      description: El cuerpo supera el tamaño permitido (256 KB; 1 MB en `/sync`)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetails' }
+          example:
+            type: about:blank
+            title: Cuerpo demasiado grande
+            status: 413
+            detail: El cuerpo supera el tamaño permitido.
+            instance: /api/v1/actas/bbbbbbbb-0000-0000-0000-000000000001
